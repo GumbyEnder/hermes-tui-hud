@@ -1,0 +1,1364 @@
+from __future__ import annotations
+
+from typing import Any
+
+from rich.console import Group
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+
+from .client import HermesAPIClient
+from .client.api import HermesAPIError
+
+SPLASH_ART = r"""
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝
+
+   A G E N T   O P E R A T O R   C O N S O L E
+""".strip("\n")
+
+
+def run_tui(client: HermesAPIClient | None = None) -> int:
+    client = client or HermesAPIClient()
+    try:
+        from textual.app import App, ComposeResult
+        from textual.containers import Container, Horizontal, Vertical
+        from textual.screen import ModalScreen
+        from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static, TextArea
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "The full-screen TUI requires 'textual'. Install project dependencies first with "
+            "'pip install -e .'"
+        ) from exc
+
+    class PromptScreen(ModalScreen[str | None]):
+        CSS = """
+        PromptScreen {
+          align: center middle;
+          background: rgba(0, 0, 0, 0.72);
+        }
+        #prompt-shell {
+          width: 84;
+          max-width: 92;
+          height: auto;
+          border: round #6bcf8d;
+          background: #0b1610;
+          padding: 1 2;
+        }
+        #prompt-actions {
+          height: auto;
+          margin-top: 1;
+        }
+        #prompt-actions Button {
+          margin-right: 1;
+        }
+        """
+
+        def __init__(self, title: str, placeholder: str = "", value: str = "") -> None:
+            super().__init__()
+            self.title = title
+            self.placeholder = placeholder
+            self.value = value
+
+        def compose(self) -> ComposeResult:
+            with Container(id="prompt-shell"):
+                yield Label(self.title, id="prompt-title")
+                yield Input(value=self.value, placeholder=self.placeholder, id="prompt-input")
+                with Horizontal(id="prompt-actions"):
+                    yield Button("OK", variant="success", id="prompt-ok")
+                    yield Button("Cancel", variant="default", id="prompt-cancel")
+
+        def on_mount(self) -> None:
+            self.query_one(Input).focus()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            self.dismiss(event.value.strip() or None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "prompt-ok":
+                value = self.query_one(Input).value.strip()
+                self.dismiss(value or None)
+            else:
+                self.dismiss(None)
+
+    class TextEditorScreen(ModalScreen[str | None]):
+        CSS = """
+        TextEditorScreen {
+          align: center middle;
+          background: rgba(0, 0, 0, 0.78);
+        }
+        #editor-shell {
+          width: 140;
+          max-width: 96%;
+          height: 34;
+          border: round #d6aa45;
+          background: #11100b;
+          padding: 1 2;
+        }
+        #editor-text {
+          height: 1fr;
+          margin-top: 1;
+        }
+        #editor-actions {
+          height: auto;
+          margin-top: 1;
+        }
+        #editor-actions Button {
+          margin-right: 1;
+        }
+        """
+
+        def __init__(self, title: str, content: str) -> None:
+            super().__init__()
+            self.title = title
+            self.content = content
+
+        def compose(self) -> ComposeResult:
+            with Container(id="editor-shell"):
+                yield Label(self.title)
+                yield TextArea(self.content, id="editor-text")
+                with Horizontal(id="editor-actions"):
+                    yield Button("Save", variant="success", id="editor-save")
+                    yield Button("Cancel", variant="default", id="editor-cancel")
+
+        def on_mount(self) -> None:
+            self.query_one(TextArea).focus()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "editor-save":
+                self.dismiss(self.query_one(TextArea).text)
+            else:
+                self.dismiss(None)
+
+    class HermesHUDApp(App[None]):
+        CSS = """
+        Screen {
+          layout: vertical;
+          background: #020604;
+          color: #d8f9e1;
+        }
+        Header {
+          background: #07110c;
+          color: #e7ffed;
+          text-style: bold;
+        }
+        #chrome {
+          height: 1fr;
+        }
+        #nav-rail {
+          width: 26;
+          min-width: 24;
+          background: #06100b;
+          border-right: heavy #173424;
+          padding: 1 0;
+        }
+        #brand {
+          height: auto;
+          padding: 0 1 1 2;
+          color: #8cf7ac;
+          text-style: bold;
+        }
+        #nav {
+          height: 1fr;
+          background: transparent;
+        }
+        #workspace {
+          width: 1fr;
+          background: #040907;
+        }
+        #hero {
+          height: 4;
+          padding: 1 2;
+          border-bottom: heavy #173424;
+          background: #08110c;
+        }
+        #content-shell {
+          height: 1fr;
+        }
+        #main-pane {
+          width: 3fr;
+          padding: 1;
+          border-right: heavy #173424;
+          background: #040b07;
+        }
+        #detail-pane {
+          width: 2fr;
+          padding: 1;
+          background: #07100b;
+        }
+        #main-content, #detail-content {
+          height: 1fr;
+        }
+        #status-bar {
+          height: 1;
+          padding: 0 1;
+          background: #08120d;
+          color: #84b694;
+        }
+        ListView {
+          background: transparent;
+          border: none;
+          height: 1fr;
+        }
+        ListItem {
+          padding: 0 1 0 2;
+          color: #8fc9a2;
+        }
+        ListItem.-highlight {
+          background: #143121;
+          color: #f0fff3;
+          text-style: bold;
+        }
+        Footer {
+          background: #08120d;
+          color: #8fc9a2;
+        }
+        """
+
+        BINDINGS = [
+            ("q", "quit", "Quit"),
+            ("r", "refresh", "Refresh"),
+            ("right_square_bracket", "next_item", "Next"),
+            ("left_square_bracket", "prev_item", "Prev"),
+            ("o", "activate_agent", "Switch"),
+            ("v", "preview", "Preview"),
+            ("y", "preview_alt", "Alt"),
+            ("s", "gateway_start", "Start"),
+            ("x", "gateway_stop", "Stop"),
+            ("t", "gateway_restart", "Restart"),
+            ("l", "gateway_logs", "Logs"),
+            ("u", "maintenance_check", "Check"),
+            ("w", "maintenance_apply_webui", "WebUI"),
+            ("a", "maintenance_apply_agent", "Agent"),
+            ("c", "clear_or_cleanup", "Clear"),
+            ("z", "cleanup_zero", "Zero"),
+            ("n", "context_add", "Add"),
+            ("e", "context_edit_or_run", "Edit/Run"),
+            ("p", "toggle_flag", "Pin/Pause"),
+            ("d", "context_delete", "Delete"),
+            ("m", "move_context", "Move"),
+        ]
+
+        profiles: list[dict[str, Any]]
+        sessions: list[dict[str, Any]]
+        projects: list[dict[str, Any]]
+        briefs: list[dict[str, Any]]
+        notes_lines: list[str]
+        selected_agent_name: str | None
+        selected_session_id: str | None
+        selected_project_id: str | None
+        maintenance_cache: dict[str, Any] | None
+        memory_cache: dict[str, Any] | None
+        reports_cache: dict[str, Any] | None
+        show_splash: bool
+
+        def compose(self) -> ComposeResult:
+            yield Header(show_clock=True)
+            with Horizontal(id="chrome"):
+                with Vertical(id="nav-rail"):
+                    yield Static("HERMES\nTUI HUD", id="brand")
+                    yield ListView(
+                        ListItem(Label("Overview"), id="nav-overview"),
+                        ListItem(Label("Agents"), id="nav-agents"),
+                        ListItem(Label("Sessions"), id="nav-sessions"),
+                        ListItem(Label("Gateway"), id="nav-gateway"),
+                        ListItem(Label("Cron"), id="nav-cron"),
+                        ListItem(Label("Projects"), id="nav-projects"),
+                        ListItem(Label("Notes/Todos"), id="nav-notes"),
+                        ListItem(Label("Memory / Reports"), id="nav-memory"),
+                        ListItem(Label("Maintenance"), id="nav-maintenance"),
+                        id="nav",
+                    )
+                with Vertical(id="workspace"):
+                    yield Static("", id="hero")
+                    with Horizontal(id="content-shell"):
+                        with Container(id="main-pane"):
+                            yield Static("", id="main-content")
+                        with Container(id="detail-pane"):
+                            yield Static("", id="detail-content")
+            yield Static("", id="status-bar")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            self.profiles = []
+            self.sessions = []
+            self.projects = []
+            self.briefs = []
+            self.notes_lines = []
+            self.selected_agent_name = None
+            self.selected_session_id = None
+            self.selected_project_id = None
+            self.maintenance_cache = None
+            self.memory_cache = None
+            self.reports_cache = None
+            self.show_splash = True
+            self.query_one(ListView).index = 0
+            self._set_status("Booting Hermes Agent HUD...")
+            self._render_current()
+            self.set_timer(1.2, self._finish_boot)
+
+        def _finish_boot(self) -> None:
+            self.show_splash = False
+            self._refresh_side_state()
+            self._render_current()
+
+        def on_list_view_selected(self, event: ListView.Selected) -> None:
+            self._render_current()
+
+        def action_refresh(self) -> None:
+            self._refresh_side_state()
+            if self._current_view() == "nav-memory":
+                self._load_memory_reports(force=True)
+            self._render_current()
+
+        def action_next_item(self) -> None:
+            view = self._current_view()
+            if view in {"nav-agents", "nav-gateway"}:
+                self._cycle_agent(1)
+            elif view == "nav-projects":
+                self._cycle_project(1)
+            elif view == "nav-sessions":
+                self._cycle_session(1)
+
+        def action_prev_item(self) -> None:
+            view = self._current_view()
+            if view in {"nav-agents", "nav-gateway"}:
+                self._cycle_agent(-1)
+            elif view == "nav-projects":
+                self._cycle_project(-1)
+            elif view == "nav-sessions":
+                self._cycle_session(-1)
+
+        def action_activate_agent(self) -> None:
+            if self._current_view() != "nav-agents":
+                self._set_status("Open Agents first.")
+                return
+            profile = self._selected_profile()
+            if not profile:
+                self._set_status("No agent selected.")
+                return
+            try:
+                client.switch_profile(profile["name"])
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status(f"Switched active profile to {profile['name']}")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def action_preview(self) -> None:
+            view = self._current_view()
+            if view == "nav-agents":
+                self._preview_profile_file("config")
+            elif view == "nav-projects":
+                self._preview_project_brief()
+            elif view == "nav-memory":
+                self._preview_memory_user()
+            else:
+                self._set_status("No preview action for this pane.")
+
+        def action_preview_alt(self) -> None:
+            view = self._current_view()
+            if view == "nav-agents":
+                self._preview_profile_file("soul")
+            elif view == "nav-projects":
+                self._preview_project_brief(raw_summary=True)
+            else:
+                self._set_status("No alternate preview action for this pane.")
+
+        def action_gateway_start(self) -> None:
+            self._gateway_action("start")
+
+        def action_gateway_stop(self) -> None:
+            self._gateway_action("stop")
+
+        def action_gateway_restart(self) -> None:
+            self._gateway_action("restart")
+
+        def action_gateway_logs(self) -> None:
+            profile_name = self._gateway_profile_name()
+            try:
+                payload = client.gateway_logs(profile=profile_name, lines=120)
+                logs = payload.get("logs") or "No gateway logs returned."
+                self.query_one("#detail-content", Static).update(
+                    Panel(Syntax(logs, "log", theme="ansi_dark", line_numbers=False), title=f"Gateway Logs · {profile_name}")
+                )
+                self._set_status(f"Loaded gateway logs for {profile_name}")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def action_maintenance_check(self) -> None:
+            if self._current_view() == "nav-maintenance":
+                self._load_maintenance(force=True)
+                self._render_current()
+                self._set_status("Update status refreshed")
+            elif self._current_view() == "nav-memory":
+                self._load_memory_reports(force=True)
+                self._render_current()
+                self._set_status("Memory/reporting refreshed")
+            else:
+                self._set_status("Open Maintenance or Memory / Reports first.")
+
+        def action_maintenance_apply_webui(self) -> None:
+            self._maintenance_apply("webui")
+
+        def action_maintenance_apply_agent(self) -> None:
+            self._maintenance_apply("agent")
+
+        def action_clear_or_cleanup(self) -> None:
+            if self._current_view() == "nav-sessions":
+                self._clear_selected_session()
+            elif self._current_view() == "nav-maintenance":
+                self._cleanup_sessions(False)
+            else:
+                self._set_status("No clear action for this pane.")
+
+        def action_cleanup_zero(self) -> None:
+            if self._current_view() != "nav-maintenance":
+                self._set_status("Open Maintenance first.")
+                return
+            self._cleanup_sessions(True)
+
+        async def action_context_add(self) -> None:
+            view = self._current_view()
+            if view == "nav-cron":
+                await self._cron_add()
+            elif view == "nav-projects":
+                await self._kanban_add()
+            elif view == "nav-notes":
+                await self._todo_add()
+            else:
+                self._set_status("No add action for this pane.")
+
+        async def action_context_edit_or_run(self) -> None:
+            view = self._current_view()
+            if view == "nav-cron":
+                await self._cron_run()
+            elif view == "nav-notes":
+                await self._notes_edit()
+            elif view == "nav-sessions":
+                await self._rename_selected_session()
+            elif view == "nav-projects":
+                await self._edit_project_brief()
+            elif view == "nav-memory":
+                await self._edit_memory()
+            else:
+                self._set_status("No edit action for this pane.")
+
+        async def action_toggle_flag(self) -> None:
+            view = self._current_view()
+            if view == "nav-cron":
+                await self._cron_toggle()
+            elif view == "nav-sessions":
+                self._toggle_session_pin()
+            else:
+                self._set_status("No toggle action for this pane.")
+
+        async def action_context_delete(self) -> None:
+            view = self._current_view()
+            if view == "nav-cron":
+                await self._cron_delete()
+            elif view == "nav-sessions":
+                self._delete_selected_session()
+            else:
+                self._set_status("No delete action for this pane.")
+
+        async def action_move_context(self) -> None:
+            view = self._current_view()
+            if view == "nav-projects":
+                await self._kanban_move()
+            elif view == "nav-sessions":
+                self._toggle_session_archive()
+            else:
+                self._set_status("No move action for this pane.")
+
+        def _current_view(self) -> str:
+            nav = self.query_one(ListView)
+            return nav.highlighted_child.id if nav.highlighted_child else "nav-overview"
+
+        def _set_status(self, message: str) -> None:
+            self.query_one("#status-bar", Static).update(message)
+
+        async def _prompt(self, label: str, placeholder: str = "", value: str = "") -> str | None:
+            return await self.push_screen_wait(PromptScreen(label, placeholder=placeholder, value=value))
+
+        async def _edit_text(self, title: str, content: str) -> str | None:
+            return await self.push_screen_wait(TextEditorScreen(title, content))
+
+        def _refresh_side_state(self) -> None:
+            try:
+                self.profiles = [
+                    {
+                        "name": profile.name,
+                        "model": profile.model,
+                        "provider": profile.provider,
+                        "is_active": profile.is_active,
+                        "is_default": profile.is_default,
+                        "gateway_running": profile.gateway_running,
+                        "path": profile.path,
+                    }
+                    for profile in client.list_profiles()
+                ]
+            except HermesAPIError:
+                self.profiles = []
+            if self.profiles:
+                active = next((profile["name"] for profile in self.profiles if profile.get("is_active")), None)
+                self.selected_agent_name = self.selected_agent_name or active or self.profiles[0]["name"]
+            else:
+                self.selected_agent_name = None
+
+            try:
+                self.sessions = client.get("/api/sessions").get("sessions", [])
+            except HermesAPIError:
+                self.sessions = []
+            if self.sessions:
+                ids = [str(session.get("session_id") or "") for session in self.sessions if session.get("session_id")]
+                self.selected_session_id = self.selected_session_id if self.selected_session_id in ids else (ids[0] if ids else None)
+            else:
+                self.selected_session_id = None
+
+            try:
+                self.projects = client.list_projects()
+            except HermesAPIError:
+                self.projects = []
+            if self.projects:
+                ids = [self._project_id(project) for project in self.projects]
+                self.selected_project_id = self.selected_project_id if self.selected_project_id in ids else ids[0]
+            else:
+                self.selected_project_id = None
+
+            try:
+                self.briefs = client.list_briefs()
+            except HermesAPIError:
+                self.briefs = []
+
+            try:
+                self.notes_lines = client.get_notes()
+            except HermesAPIError:
+                self.notes_lines = []
+
+        def _selected_profile(self) -> dict[str, Any] | None:
+            return next((profile for profile in self.profiles if profile.get("name") == self.selected_agent_name), None)
+
+        def _selected_session(self) -> dict[str, Any] | None:
+            return next((session for session in self.sessions if str(session.get("session_id") or "") == self.selected_session_id), None)
+
+        def _selected_project(self) -> dict[str, Any] | None:
+            return next((project for project in self.projects if self._project_id(project) == self.selected_project_id), None)
+
+        def _project_id(self, project: dict[str, Any]) -> str:
+            return str(project.get("project_id") or project.get("id") or project.get("name") or "")
+
+        def _cycle_agent(self, direction: int) -> None:
+            if not self.profiles:
+                self._set_status("No profiles available")
+                return
+            names = [profile["name"] for profile in self.profiles]
+            current = names.index(self.selected_agent_name) if self.selected_agent_name in names else 0
+            self.selected_agent_name = names[(current + direction) % len(names)]
+            self._render_current()
+
+        def _cycle_project(self, direction: int) -> None:
+            if not self.projects:
+                self._set_status("No projects available")
+                return
+            ids = [self._project_id(project) for project in self.projects]
+            current = ids.index(self.selected_project_id) if self.selected_project_id in ids else 0
+            self.selected_project_id = ids[(current + direction) % len(ids)]
+            self._render_current()
+
+        def _cycle_session(self, direction: int) -> None:
+            if not self.sessions:
+                self._set_status("No sessions available")
+                return
+            ids = [str(session.get("session_id") or "") for session in self.sessions if session.get("session_id")]
+            current = ids.index(self.selected_session_id) if self.selected_session_id in ids else 0
+            self.selected_session_id = ids[(current + direction) % len(ids)]
+            self._render_current()
+
+        def _preview_profile_file(self, kind: str) -> None:
+            profile = self._selected_profile()
+            if not profile:
+                self._set_status("No profile selected")
+                return
+            try:
+                content = client.get_profile_content(profile["name"])
+                key = "config" if kind == "config" else "soul"
+                path_key = "config_path" if kind == "config" else "soul_path"
+                body = content.get(key) or f"No {key} content found."
+                title = content.get(path_key) or f"{profile['name']} {key}"
+                language = "yaml" if kind == "config" else "markdown"
+                self.query_one("#detail-content", Static).update(
+                    Panel(Syntax(body, language, theme="ansi_dark", line_numbers=True), title=title)
+                )
+                self._set_status(f"Loaded {key} for {profile['name']}")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _gateway_profile_name(self) -> str:
+            return self.selected_agent_name or self._active_profile_name() or "default"
+
+        def _gateway_action(self, action: str) -> None:
+            if self._current_view() not in {"nav-gateway", "nav-agents"}:
+                self._set_status("Open Gateway or Agents first.")
+                return
+            profile_name = self._gateway_profile_name()
+            try:
+                payload = client.gateway_action(action, profile=profile_name)
+                self._set_status(payload.get("message") or f"Gateway {action} requested for {profile_name}")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _load_maintenance(self, force: bool = False) -> None:
+            if self.maintenance_cache is not None and not force:
+                return
+            self.maintenance_cache = client.check_updates(force=force)
+
+        def _maintenance_apply(self, target: str) -> None:
+            if self._current_view() != "nav-maintenance":
+                self._set_status("Open Maintenance first.")
+                return
+            try:
+                payload = client.apply_update(target)
+                self._set_status(payload.get("message") or f"Update requested for {target}")
+                self.maintenance_cache = None
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _cleanup_sessions(self, zero_only: bool) -> None:
+            try:
+                payload = client.cleanup_sessions(zero_only=zero_only)
+                self._set_status(
+                    f"Cleaned {payload.get('cleaned', 0)} {'zero-message ' if zero_only else ''}sessions"
+                )
+                self._refresh_side_state()
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _cron_add(self) -> None:
+            prompt = await self._prompt("Cron prompt", placeholder="What should Hermes do?")
+            if not prompt:
+                self._set_status("Cancelled")
+                return
+            schedule = await self._prompt("Cron schedule", placeholder="0 * * * *")
+            if not schedule:
+                self._set_status("Cancelled")
+                return
+            name = await self._prompt("Cron name", placeholder="Optional")
+            try:
+                client.create_cron_job(prompt=prompt, schedule=schedule, name=name or None)
+                self._set_status("Cron job created")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _cron_run(self) -> None:
+            job_id = await self._prompt("Cron job id")
+            if not job_id:
+                self._set_status("Cancelled")
+                return
+            try:
+                payload = client.run_cron_job(job_id)
+                self._set_status(payload.get("message") or f"Cron job {job_id} run requested")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _cron_toggle(self) -> None:
+            job_id = await self._prompt("Cron job id")
+            if not job_id:
+                self._set_status("Cancelled")
+                return
+            try:
+                jobs = client.list_cron_jobs()
+                match = next((job for job in jobs if str(job.get("id") or "") == job_id), None)
+                if not match:
+                    self._set_status(f"Cron job {job_id} not found")
+                    return
+                if match.get("enabled") is False:
+                    client.resume_cron_job(job_id)
+                    self._set_status(f"Cron job {job_id} resumed")
+                else:
+                    client.pause_cron_job(job_id)
+                    self._set_status(f"Cron job {job_id} paused")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _cron_delete(self) -> None:
+            job_id = await self._prompt("Cron job id")
+            if not job_id:
+                self._set_status("Cancelled")
+                return
+            try:
+                client.delete_cron_job(job_id)
+                self._set_status(f"Cron job {job_id} deleted")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _toggle_session_pin(self) -> None:
+            session = self._selected_session()
+            if not session or not session.get("session_id"):
+                self._set_status("No session selected")
+                return
+            try:
+                client.pin_session(str(session["session_id"]), not bool(session.get("pinned")))
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status(f"{'Pinned' if not session.get('pinned') else 'Unpinned'} session")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _toggle_session_archive(self) -> None:
+            session = self._selected_session()
+            if not session or not session.get("session_id"):
+                self._set_status("No session selected")
+                return
+            try:
+                client.archive_session(str(session["session_id"]), not bool(session.get("archived")))
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status(f"{'Archived' if not session.get('archived') else 'Unarchived'} session")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _delete_selected_session(self) -> None:
+            session = self._selected_session()
+            if not session or not session.get("session_id"):
+                self._set_status("No session selected")
+                return
+            try:
+                client.delete_session(str(session["session_id"]))
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status("Session deleted")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _clear_selected_session(self) -> None:
+            session = self._selected_session()
+            if not session or not session.get("session_id"):
+                self._set_status("No session selected")
+                return
+            try:
+                client.clear_session(str(session["session_id"]))
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status("Session cleared")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _rename_selected_session(self) -> None:
+            session = self._selected_session()
+            if not session or not session.get("session_id"):
+                self._set_status("No session selected")
+                return
+            title = await self._prompt("Session title", value=str(session.get("title") or "Untitled"))
+            if not title:
+                self._set_status("Cancelled")
+                return
+            try:
+                client.rename_session(str(session["session_id"]), title)
+                self._refresh_side_state()
+                self._render_current()
+                self._set_status("Session renamed")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _match_briefs_for_project(self, project: dict[str, Any] | None) -> list[dict[str, Any]]:
+            if not project:
+                return []
+            needle_name = str(project.get("name") or "").lower()
+            needle_path = str(project.get("path") or "").lower()
+            matches: list[dict[str, Any]] = []
+            for brief in self.briefs:
+                hay = " ".join([
+                    str(brief.get("title") or ""),
+                    str(brief.get("path") or ""),
+                    str(brief.get("summary") or ""),
+                ]).lower()
+                if needle_name and needle_name in hay:
+                    matches.append(brief)
+                    continue
+                if needle_path and needle_path in hay:
+                    matches.append(brief)
+            return matches[:6]
+
+        def _preview_project_brief(self, raw_summary: bool = False) -> None:
+            project = self._selected_project()
+            matches = self._match_briefs_for_project(project)
+            if not project or not matches:
+                self._set_status("No matching brief found for selected project")
+                return
+            brief = matches[0]
+            if raw_summary or not brief.get("path"):
+                body = brief.get("summary") or "No brief summary available."
+                self.query_one("#detail-content", Static).update(
+                    Panel(Markdown(str(body)), title=str(brief.get("title") or "Brief"))
+                )
+                self._set_status("Loaded brief summary")
+                return
+            try:
+                payload = client.get_text_file(str(brief["path"]))
+                self.query_one("#detail-content", Static).update(
+                    Panel(Markdown(payload.get("content") or ""), title=str(payload.get("path") or brief["path"]))
+                )
+                self._set_status("Loaded project brief")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _edit_project_brief(self) -> None:
+            project = self._selected_project()
+            matches = self._match_briefs_for_project(project)
+            if not project or not matches or not matches[0].get("path"):
+                self._set_status("No editable brief found for selected project")
+                return
+            brief = matches[0]
+            try:
+                payload = client.get_text_file(str(brief["path"]))
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+                return
+            updated = await self._edit_text(str(payload.get("path") or brief["path"]), str(payload.get("content") or ""))
+            if updated is None:
+                self._set_status("Cancelled")
+                return
+            try:
+                client.save_text_file(str(payload.get("path") or brief["path"]), updated)
+                self._set_status("Project brief saved")
+                self._preview_project_brief()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _todo_add(self) -> None:
+            text = await self._prompt("New todo", placeholder="Ship gateway log viewer")
+            if not text:
+                self._set_status("Cancelled")
+                return
+            lines = list(self.notes_lines)
+            lines.append(f"- [ ] {text}")
+            try:
+                client.save_notes("\n".join(lines))
+                self.notes_lines = lines
+                self._set_status("Todo added")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _notes_edit(self) -> None:
+            current = "\n".join(self.notes_lines)
+            updated = await self._edit_text("Edit Hermes Notes", current)
+            if updated is None:
+                self._set_status("Cancelled")
+                return
+            try:
+                client.save_notes(updated)
+                self.notes_lines = updated.splitlines()
+                self._set_status("Notes saved")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _edit_memory(self) -> None:
+            self._load_memory_reports(force=False)
+            current = str((self.memory_cache or {}).get("memory") or "")
+            updated = await self._edit_text("Edit Live Memory", current)
+            if updated is None:
+                self._set_status("Cancelled")
+                return
+            try:
+                client.save_memory("memory", updated)
+                self.memory_cache = None
+                self._load_memory_reports(force=True)
+                self._render_current()
+                self._set_status("Memory saved")
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _preview_memory_user(self) -> None:
+            self._load_memory_reports(force=False)
+            if not self.memory_cache:
+                self._set_status("No memory payload loaded")
+                return
+            content = str(self.memory_cache.get("user") or "No USER.md content.")
+            title = str(self.memory_cache.get("user_path") or "USER.md")
+            self.query_one("#detail-content", Static).update(
+                Panel(Markdown(content), title=title, border_style="#346d93")
+            )
+            self._set_status("Loaded USER.md")
+
+        async def _kanban_add(self) -> None:
+            project = self._selected_project()
+            if not project or not project.get("project_id"):
+                self._set_status("No project selected")
+                return
+            title = await self._prompt("Kanban title", placeholder="Integrate Honcho reporting")
+            if not title:
+                self._set_status("Cancelled")
+                return
+            detail = await self._prompt("Kanban detail", placeholder="Optional detail") or ""
+            kanban = normalize_kanban(project.get("kanban"))
+            card_id = f"{project['project_id']}-{len(kanban['todo']) + len(kanban['in_progress']) + len(kanban['done']) + 1}"
+            kanban["todo"].append({"id": card_id, "title": title, "detail": detail})
+            try:
+                client.update_project(project["project_id"], kanban=kanban)
+                self._refresh_side_state()
+                self._set_status(f"Kanban card {card_id} added")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        async def _kanban_move(self) -> None:
+            project = self._selected_project()
+            if not project or not project.get("project_id"):
+                self._set_status("No project selected")
+                return
+            card_id = await self._prompt("Kanban card id")
+            if not card_id:
+                self._set_status("Cancelled")
+                return
+            target = await self._prompt("Target column", placeholder="todo | in_progress | done")
+            if target not in {"todo", "in_progress", "done"}:
+                self._set_status("Invalid target column")
+                return
+            kanban = normalize_kanban(project.get("kanban"))
+            card = None
+            for column in ("todo", "in_progress", "done"):
+                for entry in list(kanban[column]):
+                    if str(entry.get("id")) == card_id:
+                        card = dict(entry)
+                        kanban[column].remove(entry)
+                        break
+                if card:
+                    break
+            if not card:
+                self._set_status(f"Card {card_id} not found")
+                return
+            kanban[target].append(card)
+            try:
+                client.update_project(project["project_id"], kanban=kanban)
+                self._refresh_side_state()
+                self._set_status(f"Moved card {card_id} to {target}")
+                self._render_current()
+            except HermesAPIError as exc:
+                self._set_status(str(exc))
+
+        def _load_memory_reports(self, force: bool = False) -> None:
+            if self.memory_cache is not None and self.reports_cache is not None and not force:
+                return
+            self.memory_cache = client.get_memory()
+            self.reports_cache = {
+                "resources": client.get_resources(),
+                "costs": client.get_costs(),
+                "dialogs": client.get_dialogs(),
+                "sessions": self.sessions or client.get("/api/sessions").get("sessions", []),
+            }
+
+        def _hero_renderable(self) -> Panel:
+            active_profile = self._active_profile_name()
+            nav_name = self._current_view().removeprefix("nav-").replace("-", " ").title()
+            text = Text()
+            text.append("Operator Console", style="bold #8bf2a4")
+            text.append("  ")
+            text.append(f"View: {nav_name}", style="#d7f6df")
+            text.append("  ")
+            text.append(f"Active: {active_profile}", style="#e0c36a")
+            text.append("  ")
+            text.append(f"Profiles: {len(self.profiles)}", style="#8ab2ff")
+            text.append("  ")
+            text.append(f"Sessions: {len(self.sessions)}", style="#c090ff")
+            return Panel(text, border_style="#204d31", title="Hermes", subtitle="Matrix Plus TUI")
+
+        def _splash_main(self) -> Panel:
+            art = Text(SPLASH_ART, style="bold #8bf2a4")
+            return Panel(art, title="Hermes Agent", subtitle="Initializing", border_style="#2a7f4f")
+
+        def _splash_detail(self) -> Panel:
+            msg = Text(
+                "Loading profiles, sessions, projects, notes, and operator state.\n\n"
+                "This splash stays up briefly so boot-time backend calls do not feel like a freeze.",
+                style="#d7f6df",
+            )
+            return Panel(msg, title="Boot Sequence", border_style="#346d93")
+
+        def _overview_main(self) -> Panel:
+            resources = client.get_resources()
+            memory = resources.get("memory", {})
+            disk = resources.get("disk", {})
+            table = Table.grid(padding=(0, 2))
+            table.add_column(style="bold #8bf2a4")
+            table.add_column(style="#d7f6df")
+            table.add_row("CPU", f"{resources.get('cpu_percent', 0)}%")
+            table.add_row("Memory", f"{memory.get('percent', 0)}%")
+            table.add_row("Disk", f"{disk.get('percent', 0)}%")
+            table.add_row("Profiles", str(len(self.profiles)))
+            table.add_row("Sessions", str(len(self.sessions)))
+            table.add_row("Projects", str(len(self.projects)))
+            return Panel(table, title="System Overview", border_style="#2a7f4f")
+
+        def _overview_detail(self) -> Panel:
+            alerts = client.list_alerts(limit=8)
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Event", style="#d7f6df")
+            table.add_column("Project", style="#8ab2ff")
+            if alerts:
+                for alert in alerts:
+                    table.add_row(alert.title, alert.project or "-")
+            else:
+                table.add_row("No recent ops events", "-")
+            return Panel(table, title="Recent Alerts", border_style="#346d93")
+
+        def _agents_main(self) -> Panel:
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Sel", width=3, style="#e0c36a")
+            table.add_column("Agent", style="#d7f6df")
+            table.add_column("Model", style="#8ab2ff")
+            table.add_column("Flags", style="#8bf2a4")
+            for profile in self.profiles:
+                flags = []
+                if profile.get("is_active"):
+                    flags.append("active")
+                if profile.get("is_default"):
+                    flags.append("default")
+                if profile.get("gateway_running"):
+                    flags.append("gateway")
+                table.add_row(
+                    ">" if profile.get("name") == self.selected_agent_name else "",
+                    str(profile.get("name") or "unknown"),
+                    str(profile.get("model") or "unknown"),
+                    ", ".join(flags) or "-",
+                )
+            help_text = Text("\n] / [ select    o switch active    v config    y soul    s/x/t/l gateway", style="#84b694")
+            return Panel(Group(table, help_text), title="Agents", border_style="#2a7f4f")
+
+        def _agents_detail(self) -> Panel:
+            profile = self._selected_profile()
+            if not profile:
+                return Panel("No profile selected", title="Agent Detail", border_style="#7f4a2a")
+            try:
+                content = client.get_profile_content(profile["name"])
+            except HermesAPIError as exc:
+                return Panel(str(exc), title="Agent Detail", border_style="#7f2a2a")
+            meta = Table.grid(padding=(0, 1))
+            meta.add_column(style="bold #8bf2a4")
+            meta.add_column(style="#d7f6df")
+            meta.add_row("Name", str(profile.get("name") or "unknown"))
+            meta.add_row("Provider", str(profile.get("provider") or "unknown"))
+            meta.add_row("Model", str(profile.get("model") or "unknown"))
+            meta.add_row("Path", str(profile.get("path") or "unknown"))
+            meta.add_row("Gateway", "running" if profile.get("gateway_running") else "stopped")
+            soul_preview = (content.get("soul") or "").splitlines()[:8]
+            config_preview = (content.get("config") or "").splitlines()[:8]
+            group = Group(
+                meta,
+                Text(""),
+                Text("SOUL.md", style="bold #e0c36a"),
+                Text("\n".join(soul_preview) or "No SOUL.md found", style="#d7f6df"),
+                Text(""),
+                Text("config.yaml", style="bold #8ab2ff"),
+                Text("\n".join(config_preview) or "No config.yaml found", style="#d7f6df"),
+            )
+            return Panel(group, title=f"Selected · {profile['name']}", border_style="#346d93")
+
+        def _sessions_main(self) -> Panel:
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Sel", width=3, style="#e0c36a")
+            table.add_column("Title", style="#d7f6df")
+            table.add_column("Profile", style="#8ab2ff")
+            table.add_column("Flags", style="#8bf2a4")
+            for session in self.sessions[:30]:
+                flags = []
+                if session.get("pinned"):
+                    flags.append("pinned")
+                if session.get("archived"):
+                    flags.append("archived")
+                table.add_row(
+                    ">" if str(session.get("session_id") or "") == self.selected_session_id else "",
+                    str(session.get("title") or "Untitled"),
+                    str(session.get("profile") or "default"),
+                    ", ".join(flags) or "-",
+                )
+            help_text = Text("\n] / [ select    e rename    p pin    m archive    c clear    d delete", style="#84b694")
+            return Panel(Group(table, help_text), title="Sessions", border_style="#2a7f4f")
+
+        def _sessions_detail(self) -> Panel:
+            session = self._selected_session()
+            if not session:
+                return Panel("No session selected", title="Session Detail", border_style="#7f4a2a")
+            table = Table.grid(padding=(0, 1))
+            table.add_column(style="bold #8bf2a4")
+            table.add_column(style="#d7f6df")
+            table.add_row("Title", str(session.get("title") or "Untitled"))
+            table.add_row("ID", str(session.get("session_id") or "n/a"))
+            table.add_row("Profile", str(session.get("profile") or "default"))
+            table.add_row("Model", str(session.get("model") or "unknown"))
+            table.add_row("Messages", str(session.get("message_count") or 0))
+            table.add_row("Pinned", str(bool(session.get("pinned"))))
+            table.add_row("Archived", str(bool(session.get("archived"))))
+            return Panel(table, title="Selected Session", border_style="#346d93")
+
+        def _gateway_main(self) -> Panel:
+            profile_name = self._gateway_profile_name()
+            payload = client.gateway_status(profile=profile_name)
+            table = Table.grid(padding=(0, 2))
+            table.add_column(style="bold #8bf2a4")
+            table.add_column(style="#d7f6df")
+            table.add_row("Profile", str(payload.get("profile") or profile_name))
+            table.add_row("Service", str(payload.get("service") or "unknown"))
+            table.add_row("Installed", str(bool(payload.get("installed"))))
+            table.add_row("Active", str(bool(payload.get("active"))))
+            table.add_row("Enabled", str(bool(payload.get("enabled"))))
+            if payload.get("message"):
+                table.add_row("Message", str(payload.get("message")))
+            help_text = Text("\ns start  x stop  t restart  l logs", style="#84b694")
+            return Panel(Group(table, help_text), title="Gateway", border_style="#2a7f4f")
+
+        def _gateway_detail(self) -> Panel:
+            profile_name = self._gateway_profile_name()
+            return Panel(
+                Text(
+                    f"Gateway commands are scoped to the selected profile.\n\nCurrent profile: {profile_name}\n\n"
+                    "Use Agents or ]/[ to change scope before starting, stopping, or reading logs.",
+                    style="#d7f6df",
+                ),
+                title="Gateway Scope",
+                border_style="#346d93",
+            )
+
+        def _cron_main(self) -> Panel:
+            jobs = client.list_cron_jobs()
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("ID", style="#8ab2ff")
+            table.add_column("Name", style="#d7f6df")
+            table.add_column("Schedule", style="#8bf2a4")
+            table.add_column("Enabled", style="#e0c36a")
+            for job in jobs[:20]:
+                schedule = job.get("schedule_display") or job.get("schedule") or "manual"
+                if isinstance(schedule, dict):
+                    schedule = schedule.get("display") or schedule.get("expr") or schedule.get("kind") or str(schedule)
+                table.add_row(str(job.get("id") or "n/a"), str(job.get("name") or "unnamed"), str(schedule), str(job.get("enabled", True)))
+            help_text = Text("\nn add  e run  p pause/resume  d delete", style="#84b694")
+            return Panel(Group(table, help_text), title="Cron", border_style="#2a7f4f")
+
+        def _cron_detail(self) -> Panel:
+            return Panel(
+                Text("Cron controls target the active Hermes profile.\nUse add/run/pause/delete through modal prompts.", style="#d7f6df"),
+                title="Cron Detail",
+                border_style="#346d93",
+            )
+
+        def _projects_main(self) -> Panel:
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Sel", width=3, style="#e0c36a")
+            table.add_column("Project", style="#d7f6df")
+            table.add_column("Path", style="#8ab2ff")
+            table.add_column("Cards", justify="right", style="#8bf2a4")
+            for project in self.projects:
+                kanban = normalize_kanban(project.get("kanban"))
+                total = len(kanban["todo"]) + len(kanban["in_progress"]) + len(kanban["done"])
+                table.add_row(
+                    ">" if self._project_id(project) == self.selected_project_id else "",
+                    str(project.get("name") or self._project_id(project)),
+                    str(project.get("path") or "-"),
+                    str(total),
+                )
+            help_text = Text("\n] / [ select    v preview brief    e edit brief    n add card    m move card", style="#84b694")
+            return Panel(Group(table, help_text), title="Projects", border_style="#2a7f4f")
+
+        def _projects_detail(self) -> Panel:
+            project = self._selected_project()
+            if not project:
+                return Panel("No project selected", title="Project Detail", border_style="#7f4a2a")
+            kanban = normalize_kanban(project.get("kanban"))
+            matches = self._match_briefs_for_project(project)
+            table = Table(expand=True)
+            table.add_column("Todo", style="#d7f6df")
+            table.add_column("In Progress", style="#8ab2ff")
+            table.add_column("Done", style="#8bf2a4")
+            max_rows = max(len(kanban["todo"]), len(kanban["in_progress"]), len(kanban["done"]), 1)
+            for idx in range(max_rows):
+                row = []
+                for column in ("todo", "in_progress", "done"):
+                    if idx < len(kanban[column]):
+                        card = kanban[column][idx]
+                        row.append(f"{card.get('id')}\n{card.get('title')}")
+                    else:
+                        row.append("")
+                table.add_row(*row)
+            header = Text()
+            header.append(str(project.get("name") or "Project"), style="bold #e0c36a")
+            header.append(f"\n{project.get('path') or ''}", style="#84b694")
+            if project.get("description"):
+                header.append(f"\n\n{project.get('description')}", style="#d7f6df")
+            if matches:
+                header.append("\n\nBriefs:", style="bold #8bf2a4")
+                for brief in matches:
+                    header.append(f"\n- {brief.get('title') or brief.get('path')}", style="#d7f6df")
+            return Panel(Group(header, Text(""), table), title="Project Board", border_style="#346d93")
+
+        def _notes_main(self) -> Panel:
+            todos = [line.strip() for line in self.notes_lines if line.strip().startswith(("- [", "* ["))]
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Todo", style="#d7f6df")
+            table.add_column("State", width=10, style="#8bf2a4")
+            for todo in todos[-15:]:
+                state = "done" if "[x]" in todo.lower() else "open"
+                table.add_row(todo, state)
+            if not todos:
+                table.add_row("No todo items in notes", "-")
+            help_text = Text("\nn add todo    e edit notes", style="#84b694")
+            return Panel(Group(table, help_text), title="Notes / Todos", border_style="#2a7f4f")
+
+        def _notes_detail(self) -> Panel:
+            text = "\n".join(self.notes_lines[-40:]) or "No notes content."
+            return Panel(Markdown(text), title="~/.hermes/notes.md", border_style="#346d93")
+
+        def _memory_main(self) -> Panel:
+            self._load_memory_reports(force=False)
+            memory = self.memory_cache or {}
+            reports = self.reports_cache or {}
+            resources = reports.get("resources") or {}
+            memory_block = str(memory.get("memory") or "")
+            preview = "\n".join(memory_block.splitlines()[:14]) or "No memory content found."
+            table = Table.grid(padding=(0, 2))
+            table.add_column(style="bold #8bf2a4")
+            table.add_column(style="#d7f6df")
+            table.add_row("CPU", f"{resources.get('cpu_percent', 0)}%")
+            table.add_row("Memory", f"{(resources.get('memory') or {}).get('percent', 0)}%")
+            table.add_row("Disk", f"{(resources.get('disk') or {}).get('percent', 0)}%")
+            help_text = Text("\ne edit MEMORY.md    v preview USER.md    u refresh memory/reporting", style="#84b694")
+            return Panel(Group(table, Text(""), Text(preview, style="#d7f6df"), help_text), title="Live Memory", border_style="#2a7f4f")
+
+        def _memory_detail(self) -> Panel:
+            reports = self.reports_cache or {}
+            costs = reports.get("costs") or {}
+            dialogs = reports.get("dialogs") or {}
+            sessions = reports.get("sessions") or []
+            total_cost = sum(float(session.get("estimated_cost") or 0) for session in sessions)
+            total_input = sum(int(session.get("input_tokens") or 0) for session in sessions)
+            total_output = sum(int(session.get("output_tokens") or 0) for session in sessions)
+            top_models = list((costs.get("by_model") or [])[:4])
+            table = Table.grid(padding=(0, 1))
+            table.add_column(style="bold #8bf2a4")
+            table.add_column(style="#d7f6df")
+            table.add_row("Sessions", str(len(sessions)))
+            table.add_row("Input Tokens", str(total_input))
+            table.add_row("Output Tokens", str(total_output))
+            table.add_row("Estimated Cost", f"${total_cost:.3f}")
+            table.add_row("Dialog Roots", str(len(dialogs.get("roots") or [])))
+            lines = [table, Text(""), Text("Top Models", style="bold #e0c36a")]
+            if top_models:
+                for row in top_models:
+                    lines.append(Text(f"- {row.get('model') or 'unknown'}  ${float(row.get('estimated_cost') or 0):.3f}", style="#d7f6df"))
+            else:
+                lines.append(Text("No model cost data available.", style="#d7f6df"))
+            return Panel(Group(*lines), title="Reporting", border_style="#346d93")
+
+        def _maintenance_main(self) -> Panel:
+            if self.maintenance_cache is None:
+                message = Text(
+                    "Maintenance data is now lazy-loaded.\n\nPress U to run an update check.\n"
+                    "This avoids the old blocking pause when you open the pane.",
+                    style="#d7f6df",
+                )
+                return Panel(message, title="Maintenance", border_style="#2a7f4f")
+            payload = self.maintenance_cache
+            table = Table(expand=True, box=None, pad_edge=False)
+            table.add_column("Target", style="#d7f6df")
+            table.add_column("Branch", style="#8ab2ff")
+            table.add_column("Behind", justify="right", style="#8bf2a4")
+            table.add_column("Current", style="#84b694")
+            if payload.get("disabled"):
+                table.add_row("updates", "disabled", "-", "-")
+            else:
+                for key in ("webui", "agent"):
+                    block = payload.get(key) or {}
+                    table.add_row(
+                        key,
+                        str(block.get("branch") or "unknown"),
+                        str(block.get("behind") or 0),
+                        str(block.get("current_sha") or "unknown")[:12],
+                    )
+            help_text = Text("\nu check  w webui  a agent  c cleanup  z zero cleanup", style="#84b694")
+            return Panel(Group(table, help_text), title="Maintenance", border_style="#2a7f4f")
+
+        def _maintenance_detail(self) -> Panel:
+            return Panel(
+                Text("Use this pane for update checks and cleanup flows. Mutating actions run live against Hermes.", style="#d7f6df"),
+                title="Maintenance Detail",
+                border_style="#346d93",
+            )
+
+        def _render_current(self) -> None:
+            main_widget = self.query_one("#main-content", Static)
+            detail_widget = self.query_one("#detail-content", Static)
+            hero_widget = self.query_one("#hero", Static)
+
+            if self.show_splash:
+                hero_widget.update(Panel(Text("Initializing Hermes Agent runtime...", style="#8cf7ac"), border_style="#204d31"))
+                main_widget.update(self._splash_main())
+                detail_widget.update(self._splash_detail())
+                return
+
+            hero_widget.update(self._hero_renderable())
+            selected_id = self._current_view()
+            try:
+                if selected_id == "nav-agents":
+                    main_renderable = self._agents_main()
+                    detail_renderable = self._agents_detail()
+                elif selected_id == "nav-sessions":
+                    main_renderable = self._sessions_main()
+                    detail_renderable = self._sessions_detail()
+                elif selected_id == "nav-gateway":
+                    main_renderable = self._gateway_main()
+                    detail_renderable = self._gateway_detail()
+                elif selected_id == "nav-cron":
+                    main_renderable = self._cron_main()
+                    detail_renderable = self._cron_detail()
+                elif selected_id == "nav-projects":
+                    main_renderable = self._projects_main()
+                    detail_renderable = self._projects_detail()
+                elif selected_id == "nav-notes":
+                    main_renderable = self._notes_main()
+                    detail_renderable = self._notes_detail()
+                elif selected_id == "nav-memory":
+                    main_renderable = self._memory_main()
+                    detail_renderable = self._memory_detail()
+                elif selected_id == "nav-maintenance":
+                    main_renderable = self._maintenance_main()
+                    detail_renderable = self._maintenance_detail()
+                else:
+                    main_renderable = self._overview_main()
+                    detail_renderable = self._overview_detail()
+                main_widget.update(main_renderable)
+                detail_widget.update(detail_renderable)
+                self._set_status(f"Active view: {selected_id.removeprefix('nav-')}")
+            except HermesAPIError as exc:
+                main_widget.update(Panel(str(exc), title="Backend Error", border_style="#aa4444"))
+                detail_widget.update(Panel("Hermes request failed.", border_style="#aa4444"))
+                self._set_status(str(exc))
+
+        def _active_profile_name(self) -> str:
+            active = next((profile["name"] for profile in self.profiles if profile.get("is_active")), None)
+            return active or self.selected_agent_name or (self.profiles[0]["name"] if self.profiles else "default")
+
+    HermesHUDApp().run()
+    return 0
+
+
+def normalize_kanban(input_value: Any) -> dict[str, list[dict[str, Any]]]:
+    data = input_value if isinstance(input_value, dict) else {}
+    return {
+        "todo": list(data.get("todo") or []),
+        "in_progress": list(data.get("in_progress") or []),
+        "done": list(data.get("done") or []),
+    }

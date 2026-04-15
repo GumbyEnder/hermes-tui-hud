@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-tui-hud"
+version = "0.1.0"
+description = "Terminal-native Hermes operator console"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "GumbyEnder" }
+]
+dependencies = [
+  "rich>=13.7.0",
+  "textual>=0.60.0",
+]
+
+[project.scripts]
+hermes-hud = "hermes_tui_hud.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
