@@ -32,6 +32,22 @@ Hermes TUI HUD gives a Hermes operator a fast terminal surface for the jobs that
 
 This is not a toy terminal wrapper around the web app. The intent is a serious operator console that uses Hermes-native APIs and state directly.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/ss1.jpg" width="48%" alt="Hermes TUI HUD overview" />
+  <img src="screenshots/ss2.jpg" width="48%" alt="Hermes TUI HUD agents view" />
+</p>
+
+<p align="center">
+  <img src="screenshots/ss3.jpg" width="48%" alt="Hermes TUI HUD sessions and gateway" />
+  <img src="screenshots/ss4.jpg" width="48%" alt="Hermes TUI HUD projects and notes" />
+</p>
+
+<p align="center">
+  <img src="screenshots/ss5.jpg" width="80%" alt="Hermes TUI HUD memory and reports" />
+</p>
+
 ## Current Capabilities
 
 The current build includes:
@@ -197,7 +213,6 @@ The next major work items are:
 
 See also:
 
-- [HERMES_TUI_HUD_PLAN_2026-04-15.md](HERMES_TUI_HUD_PLAN_2026-04-15.md)
 - [FUTURE_TODOS.md](FUTURE_TODOS.md)
 
 ## Relationship To Matrix Plus
