@@ -29,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     sessions = sub.add_parser("sessions", help="Session operations")
     sessions_sub = sessions.add_subparsers(dest="sessions_command", required=True)
     sessions_sub.add_parser("list", help="List sessions")
+    sessions_search = sessions_sub.add_parser("search", help="Search sessions by title or content")
+    sessions_search.add_argument("query", help="Search query")
+    sessions_search.add_argument("--depth", type=int, default=24, help="Message depth for content search")
+    sessions_export = sessions_sub.add_parser("export", help="Export a session to JSON")
+    sessions_export.add_argument("session_id", help="Session id")
+    sessions_export.add_argument("--dest", default="/tmp", help="Destination directory")
 
     gateway = sub.add_parser("gateway", help="Gateway operations")
     gateway_sub = gateway.add_subparsers(dest="gateway_command", required=True)
@@ -135,6 +141,24 @@ def _print_update_summary(payload: dict[str, Any]) -> None:
         print(f"  current={block.get('current_sha') or 'unknown'} latest={block.get('latest_sha') or 'unknown'}")
 
 
+def _print_session_search(results: list[dict[str, Any]], query: str) -> None:
+    if not results:
+        print(f"No sessions matched: {query}")
+        return
+    print(f"Session Search · {query}")
+    for session in results:
+        flags = []
+        if session.get("pinned"):
+            flags.append("pinned")
+        if session.get("archived"):
+            flags.append("archived")
+        match = session.get("match_type") or "match"
+        print(f"- {session.get('title') or 'Untitled'} ({session.get('session_id') or 'no-id'})")
+        print(f"  profile={session.get('profile') or 'default'} model={session.get('model') or 'unknown'} match={match}")
+        if flags:
+            print(f"  flags={', '.join(flags)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -156,6 +180,20 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 return _emit_json([session.__dict__ for session in client.list_sessions()])
             print(render_sessions_text(client))
+            return 0
+
+        if args.command == "sessions" and args.sessions_command == "search":
+            payload = client.search_sessions(args.query, content=True, depth=args.depth)
+            if args.json:
+                return _emit_json(payload)
+            _print_session_search(payload, args.query)
+            return 0
+
+        if args.command == "sessions" and args.sessions_command == "export":
+            target = client.export_session(args.session_id, dest_dir=args.dest)
+            if args.json:
+                return _emit_json({"ok": True, "path": str(target)})
+            print(f"Exported session to {target}")
             return 0
 
         if args.command == "gateway":

@@ -6,6 +6,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from .models import AgentProfile, HermesAlert, HermesSession
@@ -91,6 +92,26 @@ class HermesAPIClient:
     def post(self, path: str, payload: dict[str, Any] | None = None) -> Any:
         return self.request("POST", path, payload=payload)
 
+    def request_raw(self, method: str, path: str) -> tuple[bytes, dict[str, str]]:
+        if self.password and path != "/api/auth/login":
+            self.login()
+        url = f"{self.base_url}{path}"
+        req = urllib.request.Request(url, headers=self._headers(), method=method.upper())
+        try:
+            with self._opener.open(req, timeout=self.timeout) as response:
+                raw = response.read()
+                headers = {k.lower(): v for k, v in response.headers.items()}
+                return raw, headers
+        except urllib.error.HTTPError as exc:
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                message = body.get("error") or body.get("message") or exc.reason
+            except Exception:
+                message = exc.reason
+            raise HermesAPIError(f"{exc.code} {message}") from exc
+        except urllib.error.URLError as exc:
+            raise HermesAPIError(f"Network error: {exc.reason}") from exc
+
     def summary(self) -> dict[str, Any]:
         resources = self.get("/api/ops/resources")
         profiles = self.get("/api/profiles")
@@ -110,6 +131,21 @@ class HermesAPIClient:
     def list_sessions(self) -> list[HermesSession]:
         data = self.get("/api/sessions")
         return [HermesSession.from_api(item) for item in data.get("sessions", [])]
+
+    def search_sessions(self, query: str, content: bool = True, depth: int = 5) -> list[dict[str, Any]]:
+        q = urllib.parse.quote(query)
+        payload = self.get(f"/api/sessions/search?q={q}&content={'1' if content else '0'}&depth={int(depth)}")
+        return list(payload.get("sessions", []))
+
+    def export_session(self, session_id: str, dest_dir: str | Path = "/tmp") -> Path:
+        raw, headers = self.request_raw("GET", f"/api/session/export?session_id={urllib.parse.quote(session_id)}")
+        filename = headers.get("content-disposition", "")
+        target_name = f"hermes-{session_id}.json"
+        if "filename=" in filename:
+            target_name = filename.split("filename=", 1)[1].strip().strip('"')
+        target = Path(dest_dir).expanduser().resolve() / target_name
+        target.write_bytes(raw)
+        return target
 
     def rename_session(self, session_id: str, title: str) -> dict[str, Any]:
         return self.post("/api/session/rename", {"session_id": session_id, "title": title})
