@@ -6,6 +6,7 @@ from datetime import timezone
 from pathlib import Path
 from typing import Any
 
+from rich import box
 from rich.console import Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -30,6 +31,12 @@ SPLASH_ART = r"""
 THEMES: dict[str, dict[str, str]] = {
     "matrix": {
         "name": "Matrix",
+        "brand": "HERMES // MATRIX",
+        "tagline": "green phosphor signal deck",
+        "hero_title": "Signal Matrix",
+        "hero_subtitle": "Operator link live",
+        "splash_title": "Boot Sequence // Matrix",
+        "splash_subtitle": "Signal sync",
         "screen_bg": "#020604",
         "nav_bg": "#06100b",
         "workspace_bg": "#040907",
@@ -46,9 +53,16 @@ THEMES: dict[str, dict[str, str]] = {
         "info": "#8ab2ff",
         "border": "#173424",
         "hero_border": "#204d31",
+        "marker": "▸",
     },
     "amber": {
         "name": "Amber CRT",
+        "brand": "HERMES // AMBER",
+        "tagline": "warm phosphor operator console",
+        "hero_title": "Amber Console",
+        "hero_subtitle": "CRT link steady",
+        "splash_title": "Boot Sequence // Amber CRT",
+        "splash_subtitle": "Phosphor warmup",
         "screen_bg": "#090603",
         "nav_bg": "#120b05",
         "workspace_bg": "#0c0804",
@@ -65,9 +79,16 @@ THEMES: dict[str, dict[str, str]] = {
         "info": "#f6bf74",
         "border": "#4a2e14",
         "hero_border": "#6d431f",
+        "marker": "▸",
     },
     "crt-blue": {
         "name": "Phosphor Blue",
+        "brand": "HERMES // BLUE",
+        "tagline": "radar-clean ops display",
+        "hero_title": "Blue Watchfloor",
+        "hero_subtitle": "Status net stable",
+        "splash_title": "Boot Sequence // Phosphor Blue",
+        "splash_subtitle": "Waveguide align",
         "screen_bg": "#030611",
         "nav_bg": "#050b17",
         "workspace_bg": "#040913",
@@ -84,10 +105,123 @@ THEMES: dict[str, dict[str, str]] = {
         "info": "#8ac4ff",
         "border": "#17344e",
         "hero_border": "#1d486a",
+        "marker": "▣",
+    },
+    "vault-tec": {
+        "name": "Vault-Tec",
+        "brand": "HERMES // VAULT-TEC",
+        "tagline": "retro-future shelter ops",
+        "hero_title": "Vault Console",
+        "hero_subtitle": "Containment online",
+        "splash_title": "Boot Sequence // Vault-Tec",
+        "splash_subtitle": "Shelter systems ready",
+        "screen_bg": "#07110a",
+        "nav_bg": "#0d1a10",
+        "workspace_bg": "#08140c",
+        "main_bg": "#0b170e",
+        "detail_bg": "#0f1d12",
+        "header_bg": "#102011",
+        "status_bg": "#0d1c10",
+        "accent": "#f4d64b",
+        "accent_soft": "#cdb55f",
+        "select_bg": "#254124",
+        "text": "#fff0a9",
+        "muted": "#d5c77d",
+        "warn": "#ffd966",
+        "info": "#9ee4a2",
+        "border": "#496134",
+        "hero_border": "#8c9d3a",
+        "marker": "◆",
+    },
+    "mother": {
+        "name": "Mother",
+        "brand": "HERMES // MOTHER",
+        "tagline": "cold shipmind oversight",
+        "hero_title": "MU-TH-UR Deck",
+        "hero_subtitle": "supervision active",
+        "splash_title": "Boot Sequence // Mother",
+        "splash_subtitle": "corporate monitor online",
+        "screen_bg": "#080707",
+        "nav_bg": "#120d0d",
+        "workspace_bg": "#0f0c0c",
+        "main_bg": "#130f0f",
+        "detail_bg": "#181212",
+        "header_bg": "#150f0f",
+        "status_bg": "#130d0d",
+        "accent": "#d94b4b",
+        "accent_soft": "#d3a258",
+        "select_bg": "#311919",
+        "text": "#f2dfcf",
+        "muted": "#c1a190",
+        "warn": "#ffbf69",
+        "info": "#c9b59f",
+        "border": "#563535",
+        "hero_border": "#8b3d3d",
+        "marker": "◉",
+    },
+    "netrunner": {
+        "name": "Netrunner",
+        "brand": "HERMES // NETRUNNER",
+        "tagline": "high-voltage deck access",
+        "hero_title": "Runner Grid",
+        "hero_subtitle": "trace line masked",
+        "splash_title": "Boot Sequence // Netrunner",
+        "splash_subtitle": "deck uplink established",
+        "screen_bg": "#04070d",
+        "nav_bg": "#07121a",
+        "workspace_bg": "#061019",
+        "main_bg": "#09151f",
+        "detail_bg": "#0b1824",
+        "header_bg": "#09131d",
+        "status_bg": "#08111a",
+        "accent": "#35f0ff",
+        "accent_soft": "#8edbe0",
+        "select_bg": "#14394d",
+        "text": "#d9fbff",
+        "muted": "#87cbd1",
+        "warn": "#ff7bf0",
+        "info": "#76b8ff",
+        "border": "#1d4c5d",
+        "hero_border": "#22b7c8",
+        "marker": "▶",
+    },
+    "neonwave": {
+        "name": "Neonwave",
+        "brand": "HERMES // NEONWAVE",
+        "tagline": "synth horizon operator deck",
+        "hero_title": "Neonwave Deck",
+        "hero_subtitle": "night grid locked in",
+        "splash_title": "Boot Sequence // Neonwave",
+        "splash_subtitle": "horizon glow stable",
+        "screen_bg": "#11081d",
+        "nav_bg": "#1b0d2d",
+        "workspace_bg": "#140b24",
+        "main_bg": "#1a1030",
+        "detail_bg": "#201238",
+        "header_bg": "#1c0f31",
+        "status_bg": "#180d2b",
+        "accent": "#ff4fd8",
+        "accent_soft": "#ff9ef1",
+        "select_bg": "#48215f",
+        "text": "#ffe6fb",
+        "muted": "#d7a8e6",
+        "warn": "#6ef2ff",
+        "info": "#8ab7ff",
+        "border": "#5b2f77",
+        "hero_border": "#ff4fd8",
+        "marker": "✦",
     },
 }
 
 THEME_STATE_PATH = Path.home() / ".hermes" / "tui-hud-theme.txt"
+LAYOUT_STATE_PATH = Path.home() / ".hermes" / "tui-hud-layout.txt"
+EFFECTS_STATE_PATH = Path.home() / ".hermes" / "tui-hud-effects.txt"
+
+EFFECT_MODES: dict[str, dict[str, Any]] = {
+    "full": {"name": "Full FX", "box": box.HEAVY, "show_splash_art": True, "show_tagline": True, "flatten": False},
+    "minimal": {"name": "Minimal", "box": box.ROUNDED, "show_splash_art": False, "show_tagline": True, "flatten": False},
+    "off": {"name": "Low Noise Ops", "box": box.MINIMAL, "show_splash_art": False, "show_tagline": False, "flatten": True},
+}
 
 
 def run_tui(client: HermesAPIClient | None = None) -> int:
@@ -221,7 +355,7 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
         def compose(self) -> ComposeResult:
             help_text = Text()
             rows = [
-                ("Global", "r refresh   g theme   h help   q quit"),
+                ("Global", "r refresh   g theme   G effects   L/ctrl+l layout   h help   q quit"),
                 ("Navigation", "] / [ select item"),
                 ("Sessions", "f search   k filter   j export   e rename   p pin   m archive   c clear   d delete"),
                 ("Agents", "o switch active   v config   y soul"),
@@ -242,6 +376,8 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             self.dismiss(None)
 
     class HermesHUDApp(App[None]):
+        TITLE = "HERO — Hermes Executive Relay Operations"
+
         CSS = """
         Screen {
           layout: vertical;
@@ -272,6 +408,16 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
         #nav {
           height: 1fr;
           background: transparent;
+        }
+        #top-nav {
+          display: none;
+          height: 3;
+          padding: 0 2 1 2;
+        }
+        #top-nav Button {
+          min-width: 0;
+          width: auto;
+          margin-right: 1;
         }
         #workspace {
           width: 1fr;
@@ -332,7 +478,14 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             ("h", "show_help", "Help"),
             ("right_square_bracket", "next_item", "Next"),
             ("left_square_bracket", "prev_item", "Prev"),
+            ("right", "next_section", "Next Section"),
+            ("left", "prev_section", "Prev Section"),
             ("g", "cycle_theme", "Theme"),
+            ("G", "cycle_effects", "Effects"),
+            ("shift+g", "cycle_effects", "Effects"),
+            ("shift+l", "cycle_layout", "Layout"),
+            ("L", "cycle_layout", "Layout"),
+            ("ctrl+l", "cycle_layout", "Layout"),
             ("f", "search_sessions", "Search"),
             ("k", "cycle_session_filter", "Filter"),
             ("i", "cycle_time_window", "Window"),
@@ -379,6 +532,8 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
         project_browser_path: str
         selected_project_entry_rel: str | None
         hud_theme: str
+        hud_effects: str
+        layout_mode: str
         show_splash: bool
         loading_views: set[str]
         status_message: str
@@ -389,7 +544,7 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             yield Header(show_clock=True)
             with Horizontal(id="chrome"):
                 with Vertical(id="nav-rail"):
-                    yield Static("HERMES\nTUI HUD", id="brand")
+                    yield Static("", id="brand")
                     yield ListView(
                         ListItem(Label("Overview"), id="nav-overview"),
                         ListItem(Label("Agents"), id="nav-agents"),
@@ -405,8 +560,20 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
                         id="nav",
                     )
                 with Vertical(id="workspace"):
+                    with Horizontal(id="top-nav"):
+                        yield Button("Overview", id="topnav-nav-overview")
+                        yield Button("Agents", id="topnav-nav-agents")
+                        yield Button("Sessions", id="topnav-nav-sessions")
+                        yield Button("Gateway", id="topnav-nav-gateway")
+                        yield Button("Cron", id="topnav-nav-cron")
+                        yield Button("Projects", id="topnav-nav-projects")
+                        yield Button("Notes", id="topnav-nav-notes")
+                        yield Button("Memory", id="topnav-nav-memory")
+                        yield Button("Reports", id="topnav-nav-reports")
+                        yield Button("Spend", id="topnav-nav-token-spend")
+                        yield Button("Maint", id="topnav-nav-maintenance")
                     yield Static("", id="hero")
-                    with Horizontal(id="content-shell"):
+                    with Container(id="content-shell"):
                         with Container(id="main-pane"):
                             yield Static("", id="main-content")
                         with Container(id="detail-pane"):
@@ -437,6 +604,8 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             self.project_browser_path = "."
             self.selected_project_entry_rel = None
             self.hud_theme = self._load_saved_theme()
+            self.hud_effects = self._load_saved_effects()
+            self.layout_mode = self._load_saved_layout()
             self.show_splash = True
             self.loading_views = set()
             self.status_message = "Booting Hermes Agent HUD..."
@@ -444,9 +613,10 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             self.selected_todo_line_index = None
             self.query_one(ListView).index = 0
             self._apply_theme()
+            self._apply_layout()
             self._set_status("Booting Hermes Agent HUD...")
             self._render_current()
-            self.set_timer(1.2, self._finish_boot)
+            self.set_timer(3.2, self._finish_boot)
 
         def _finish_boot(self) -> None:
             self.show_splash = False
@@ -455,31 +625,148 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             self._render_current()
 
         def _theme(self) -> dict[str, str]:
-            return THEMES[self.hud_theme]
+            return THEMES[getattr(self, "hud_theme", "matrix")]
+
+        def _effects(self) -> dict[str, Any]:
+            return EFFECT_MODES[getattr(self, "hud_effects", "full")]
 
         def _apply_theme(self) -> None:
             theme = self._theme()
+            effects = self._effects()
             self.screen.styles.background = theme["screen_bg"]
             self.query_one(Header).styles.background = theme["header_bg"]
+            self.query_one(Header).styles.color = theme["accent"]
             self.query_one(Footer).styles.background = theme["status_bg"]
-            self.query_one("#nav-rail", Vertical).styles.background = theme["nav_bg"]
-            self.query_one("#workspace", Vertical).styles.background = theme["workspace_bg"]
+            self.query_one(Footer).styles.color = theme["muted"]
+            nav_bg = theme["screen_bg"] if effects["flatten"] else theme["nav_bg"]
+            workspace_bg = theme["screen_bg"] if effects["flatten"] else theme["workspace_bg"]
+            main_bg = theme["screen_bg"] if effects["flatten"] else theme["main_bg"]
+            detail_bg = theme["screen_bg"] if effects["flatten"] else theme["detail_bg"]
+            header_bg = theme["screen_bg"] if effects["flatten"] else theme["header_bg"]
+            status_bg = theme["screen_bg"] if effects["flatten"] else theme["status_bg"]
+            self.query_one("#nav-rail", Vertical).styles.background = nav_bg
+            self.query_one("#workspace", Vertical).styles.background = workspace_bg
             self.query_one("#hero", Static).styles.background = theme["header_bg"]
             self.query_one("#hero", Static).styles.border_bottom = ("heavy", theme["border"])
-            self.query_one("#main-pane", Container).styles.background = theme["main_bg"]
+            self.query_one("#main-pane", Container).styles.background = main_bg
             self.query_one("#main-pane", Container).styles.border_right = ("heavy", theme["border"])
-            self.query_one("#detail-pane", Container).styles.background = theme["detail_bg"]
-            self.query_one("#status-bar", Static).styles.background = theme["status_bg"]
-            self.query_one("#brand", Static).styles.color = theme["accent"]
+            self.query_one("#detail-pane", Container).styles.background = detail_bg
+            self.query_one("#hero", Static).styles.background = header_bg
+            self.query_one("#status-bar", Static).styles.background = status_bg
+            brand = self.query_one("#brand", Static)
+            brand.styles.color = theme["accent"]
+            brand.styles.background = nav_bg
+            brand.update(self._brand_renderable())
+            top_nav = self.query_one("#top-nav", Horizontal)
+            top_nav.styles.background = nav_bg
+            for child in top_nav.children:
+                if isinstance(child, Button):
+                    child.styles.background = theme["nav_bg"]
+                    child.styles.color = theme["muted"]
+                    child.styles.border = ("round", theme["border"])
             nav = self.query_one(ListView)
-            nav.styles.background = theme["nav_bg"]
+            nav.styles.background = nav_bg
             for item in nav.children:
                 item.styles.color = theme["muted"]
             self.refresh()
 
+        def _saved_layout_label(self) -> str:
+            effective = self._effective_layout_mode()
+            layout_mode = getattr(self, "layout_mode", "wide")
+            if effective != layout_mode:
+                return f"{layout_mode} (auto->{effective})"
+            return effective
+
+        def _effective_layout_mode(self) -> str:
+            try:
+                width = int(self.size.width)
+            except Exception:
+                width = 160
+            if width < 145:
+                return "stacked"
+            return getattr(self, "layout_mode", "wide")
+
+        def _apply_layout(self) -> None:
+            effective = self._effective_layout_mode()
+            chrome = self.query_one("#chrome", Horizontal)
+            nav_rail = self.query_one("#nav-rail", Vertical)
+            workspace = self.query_one("#workspace", Vertical)
+            content = self.query_one("#content-shell", Container)
+            main = self.query_one("#main-pane", Container)
+            detail = self.query_one("#detail-pane", Container)
+            theme = self._theme()
+            if effective == "stacked":
+                chrome.styles.layout = "vertical"
+                nav_rail.styles.width = "1fr"
+                nav_rail.styles.height = 4
+                nav_rail.styles.border_right = None
+                nav_rail.styles.border_bottom = ("heavy", theme["border"])
+                self.query_one("#top-nav", Horizontal).styles.display = "block"
+                self.query_one("#nav", ListView).styles.display = "none"
+                workspace.styles.width = "1fr"
+                workspace.styles.height = "1fr"
+                content.styles.layout = "vertical"
+                main.styles.width = None
+                detail.styles.width = None
+                main.styles.height = "2fr"
+                detail.styles.height = "1fr"
+                main.styles.border_right = None
+                main.styles.border_bottom = ("heavy", theme["border"])
+            else:
+                chrome.styles.layout = "horizontal"
+                nav_rail.styles.width = 26
+                nav_rail.styles.height = "1fr"
+                nav_rail.styles.border_bottom = None
+                nav_rail.styles.border_right = ("heavy", theme["border"])
+                self.query_one("#top-nav", Horizontal).styles.display = "none"
+                self.query_one("#nav", ListView).styles.display = "block"
+                workspace.styles.width = "1fr"
+                workspace.styles.height = "1fr"
+                content.styles.layout = "horizontal"
+                main.styles.width = "3fr"
+                detail.styles.width = "2fr"
+                main.styles.height = None
+                detail.styles.height = None
+                main.styles.border_bottom = None
+                main.styles.border_right = ("heavy", theme["border"])
+            detail.styles.border_top = None
+            self.refresh()
+
+        def _load_saved_layout(self) -> str:
+            try:
+                saved = LAYOUT_STATE_PATH.read_text(encoding="utf-8").strip()
+                if saved in {"wide", "stacked"}:
+                    return saved
+            except OSError:
+                pass
+            return "wide"
+
+        def _save_layout(self) -> None:
+            try:
+                LAYOUT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                LAYOUT_STATE_PATH.write_text(self.layout_mode, encoding="utf-8")
+            except OSError:
+                pass
+
+        def on_resize(self, event) -> None:
+            self._apply_layout()
+            self._render_status_bar()
+
         def on_list_view_selected(self, event: ListView.Selected) -> None:
             self._ensure_view_data(self._current_view())
             self._render_current()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            button_id = event.button.id or ""
+            if button_id.startswith("topnav-"):
+                target = button_id.removeprefix("topnav-")
+                nav = self.query_one(ListView)
+                ids = [getattr(item, "id", "") for item in nav.children]
+                if target in ids:
+                    nav.index = ids.index(target)
+                    self._ensure_view_data(target)
+                    self._render_current()
+                    self._set_status(f"Active view: {target.removeprefix('nav-')}")
 
         def action_refresh(self) -> None:
             self._queue_load("shell", force=True, status="Refreshing Hermes state...")
@@ -505,14 +792,32 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
         def action_show_help(self) -> None:
             self.push_screen(HelpScreen())
 
+        async def action_cycle_layout(self) -> None:
+            self.layout_mode = "stacked" if self.layout_mode == "wide" else "wide"
+            self._save_layout()
+            self._apply_layout()
+            self._render_current()
+            self._set_status(f"Layout: {self._saved_layout_label()}")
+
         async def action_cycle_theme(self) -> None:
             names = list(THEMES.keys())
             idx = names.index(self.hud_theme)
             self.hud_theme = names[(idx + 1) % len(names)]
             self._save_theme()
             self._apply_theme()
+            self._apply_layout()
             self._render_current()
             self._set_status(f"Theme: {THEMES[self.hud_theme]['name']}")
+
+        async def action_cycle_effects(self) -> None:
+            names = list(EFFECT_MODES.keys())
+            idx = names.index(self.hud_effects) if self.hud_effects in names else 0
+            self.hud_effects = names[(idx + 1) % len(names)]
+            self._save_effects()
+            self._apply_theme()
+            self._apply_layout()
+            self._render_current()
+            self._set_status(f"Effects: {self._effects()['name']}")
 
         async def action_search_sessions(self) -> None:
             if self._current_view() != "nav-sessions":
@@ -584,6 +889,12 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             elif view == "nav-notes":
                 self._cycle_todo(1)
 
+        def action_next_section(self) -> None:
+            self._select_nav_offset(1)
+
+        def action_prev_section(self) -> None:
+            self._select_nav_offset(-1)
+
         def action_prev_item(self) -> None:
             view = self._current_view()
             if view in {"nav-agents", "nav-gateway"}:
@@ -594,6 +905,16 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
                 self._cycle_session(-1)
             elif view == "nav-notes":
                 self._cycle_todo(-1)
+
+        def _select_nav_offset(self, direction: int) -> None:
+            nav = self.query_one(ListView)
+            count = len(nav.children)
+            if count == 0:
+                return
+            current = nav.index or 0
+            nav.index = (current + direction) % count
+            self._ensure_view_data(self._current_view())
+            self._render_current()
 
         def action_activate_agent(self) -> None:
             if self._current_view() != "nav-agents":
@@ -766,11 +1087,17 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
         def _render_status_bar(self) -> None:
             theme = self._theme()
             status = Text()
-            status.append(self.status_message or "Ready", style=theme["text"])
-            if self.loading_views:
+            status.append(getattr(self, "status_message", None) or "Ready", style=theme["text"])
+            status.append("  ")
+            status.append(f"theme: {theme['name']}", style=theme["accent_soft"])
+            status.append("  ")
+            status.append(f"fx: {self._effects()['name']}", style=theme["accent_soft"])
+            status.append("  ")
+            status.append(f"layout: {self._saved_layout_label()}", style=theme["info"])
+            if getattr(self, "loading_views", None):
                 status.append("  ")
                 status.append(f"loading: {', '.join(sorted(self.loading_views))}", style=theme["warn"])
-            if self.last_refresh_label:
+            if getattr(self, "last_refresh_label", None):
                 status.append("  ")
                 status.append(f"last refresh: {self.last_refresh_label}", style=theme["muted"])
             self.query_one("#status-bar", Static).update(status)
@@ -1672,10 +1999,11 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
 
         def _hero_renderable(self) -> Panel:
             theme = self._theme()
+            effects = self._effects()
             active_profile = self._active_profile_name()
             nav_name = self._current_view().removeprefix("nav-").replace("-", " ").title()
             text = Text()
-            text.append("Operator Console", style=f"bold {theme['accent']}")
+            text.append(theme["hero_title"], style=f"bold {theme['accent']}")
             text.append("  ")
             text.append(f"View: {nav_name}", style=theme["text"])
             text.append("  ")
@@ -1686,10 +2014,22 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             text.append(f"Sessions: {len(self.sessions)}", style=theme["info"])
             text.append("  ")
             text.append(f"Theme: {theme['name']}", style=theme["accent_soft"])
+            text.append("  ")
+            text.append(f"FX: {effects['name']}", style=theme["accent_soft"])
+            text.append("  ")
+            text.append(f"Layout: {self._saved_layout_label()}", style=theme["info"])
+            if effects["show_tagline"]:
+                text.append("\n")
+                text.append(theme["hero_subtitle"], style=theme["muted"])
             if self.loading_views:
                 text.append("  ")
                 text.append("Loading…", style=theme["warn"])
-            return Panel(text, border_style=theme["hero_border"], title="Hermes", subtitle="Matrix Plus TUI")
+            return self._panel(
+                text,
+                title=theme["brand"],
+                subtitle=theme["tagline"] if effects["show_tagline"] else "Hermes TUI HUD",
+                border=theme["hero_border"],
+            )
 
         def _load_saved_theme(self) -> str:
             try:
@@ -1700,6 +2040,15 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
                 pass
             return "matrix"
 
+        def _load_saved_effects(self) -> str:
+            try:
+                saved = EFFECTS_STATE_PATH.read_text(encoding="utf-8").strip()
+                if saved in EFFECT_MODES:
+                    return saved
+            except OSError:
+                pass
+            return "full"
+
         def _save_theme(self) -> None:
             try:
                 THEME_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1707,17 +2056,77 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             except OSError:
                 pass
 
+        def _save_effects(self) -> None:
+            try:
+                EFFECTS_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                EFFECTS_STATE_PATH.write_text(self.hud_effects, encoding="utf-8")
+            except OSError:
+                pass
+
+        def _brand_renderable(self) -> Text:
+            theme = self._theme()
+            effects = self._effects()
+            text = Text()
+            text.append("HERMES HERO", style=f"bold {theme['accent']}")
+            if effects["show_tagline"]:
+                text.append("\n")
+                text.append("Hermes Executive Relay Operations", style=theme["accent_soft"])
+            return text
+
+        def _render_top_nav_buttons(self) -> None:
+            theme = self._theme()
+            current = self._current_view()
+            marker = theme.get("marker", "▸")
+            top_nav = self.query_one("#top-nav", Horizontal)
+            for child in top_nav.children:
+                if not isinstance(child, Button):
+                    continue
+                target = (child.id or "").removeprefix("topnav-")
+                label = target.removeprefix("nav-").replace("-", " ").title()
+                if target == "nav-token-spend":
+                    label = "Spend"
+                elif target == "nav-maintenance":
+                    label = "Maint"
+                if target == current:
+                    child.label = f"{marker} {label}"
+                    child.styles.background = theme["accent"]
+                    child.styles.color = theme["screen_bg"]
+                    child.styles.border = ("round", theme["accent"])
+                else:
+                    child.label = label
+                    child.styles.background = theme["nav_bg"]
+                    child.styles.color = theme["muted"]
+                    child.styles.border = ("round", theme["border"])
+
+        def _panel(self, content: Any, *, title: str | None = None, subtitle: str | None = None, border: str | None = None) -> Panel:
+            theme = self._theme()
+            effects = self._effects()
+            border_style = border or theme["border"]
+            title_text = Text(title or "", style=f"bold {theme['accent']}") if title else None
+            subtitle_text = Text(subtitle or "", style=theme["accent_soft"]) if subtitle else None
+            return Panel(content, title=title_text, subtitle=subtitle_text, border_style=border_style, box=effects["box"])
+
         def _splash_main(self) -> Panel:
-            art = Text(SPLASH_ART, style="bold #8bf2a4")
-            return Panel(art, title="Hermes Agent", subtitle="Initializing", border_style="#2a7f4f")
+            theme = self._theme()
+            effects = self._effects()
+            if effects["show_splash_art"]:
+                art = Text("HERMES HERO\n", style=f"bold {theme['accent']}")
+                art.append("Hermes Executive Relay Operations\n\n", style=theme["accent_soft"])
+                art.append(theme["tagline"], style=theme["text"])
+                art.append("\n\nPreparing relay, memory, sessions, and operator state...", style=theme["muted"])
+            else:
+                art = Text("HERMES HERO\n", style=f"bold {theme['accent']}")
+                art.append("Hermes Executive Relay Operations", style=theme["accent_soft"])
+            return self._panel(art, title=theme["splash_title"], subtitle=theme["splash_subtitle"], border=theme["hero_border"])
 
         def _splash_detail(self) -> Panel:
-            msg = Text(
-                "Loading profiles, sessions, projects, notes, and operator state.\n\n"
-                "This splash stays up briefly so boot-time backend calls do not feel like a freeze.",
-                style="#d7f6df",
-            )
-            return Panel(msg, title="Boot Sequence", border_style="#346d93")
+            theme = self._theme()
+            effects = self._effects()
+            body = "Loading profiles, sessions, projects, notes, and operator state."
+            if effects["show_tagline"]:
+                body += "\n\nThis splash stays up briefly so boot-time backend calls do not feel like a freeze."
+            msg = Text(body, style=theme["text"])
+            return self._panel(msg, title="Boot Sequence", subtitle=effects["name"], border=theme["info"])
 
         def _overview_main(self) -> Panel:
             if not self.overview_cache:
@@ -2260,14 +2669,27 @@ def run_tui(client: HermesAPIClient | None = None) -> int:
             main_widget = self.query_one("#main-content", Static)
             detail_widget = self.query_one("#detail-content", Static)
             hero_widget = self.query_one("#hero", Static)
+            top_nav_widget = self.query_one("#top-nav", Horizontal)
 
             if self.show_splash:
-                hero_widget.update(Panel(Text("Initializing Hermes Agent runtime...", style="#8cf7ac"), border_style="#204d31"))
+                theme = self._theme()
+                top_nav_widget.styles.display = "none"
+                hero_widget.update(
+                    self._panel(
+                        Text(f"Initializing {theme['brand']}...", style=theme["accent"]),
+                        title=theme["hero_title"],
+                        subtitle=theme["hero_subtitle"],
+                        border=theme["hero_border"],
+                    )
+                )
                 main_widget.update(self._splash_main())
                 detail_widget.update(self._splash_detail())
                 return
 
             self._ensure_view_data(self._current_view())
+            if self._effective_layout_mode() == "stacked":
+                top_nav_widget.styles.display = "block"
+            self._render_top_nav_buttons()
             hero_widget.update(self._hero_renderable())
             selected_id = self._current_view()
             try:
