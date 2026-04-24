@@ -1,25 +1,577 @@
-"""TUI HUD application — placeholder for v0.2 full build."""
+"""Cyberpunk Hermes Dashboard TUI HUD  –  Status · Sessions · Model · Config
+    Skills · Tools · Cron · Logs · Analytics · Env
+
+Keybindings:  q=Quit  r=Refresh  /=Search  1-9/0=Switch Tabs
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from textual.reactive import reactive
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Header,
+    Label,
+    RichLog,
+    Static,
+    TabbedContent,
+    TabPane,
+)
+
+from .client.api import HermesDashboardClient
+from .client.models import (
+    CronJob, EnvVar, HermesSession, ModelInfo, SessionSearchResult,
+    Skill, Status, Toolset, UsageAnalytics,
+)
+
+# ─── Colors ─────────────────────────────────────────────────────────────
+CYAN, MAGENTA, GREEN, RED, BG, PANEL = (
+    "#00fff0", "#ff00ff", "#00ff41", "#ff0040", "#0a0a0f", "#12121a"
+)
+
+
+class CyberHeader(Static):
+    version = reactive("")
+    gateway_status = reactive("")
+    session_count = reactive(0)
+    model = reactive("")
+    clock = reactive("")
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="cyber-header"):
+            yield Label("", id="v")
+            yield Label("", id="g")
+            yield Label("", id="s")
+            yield Label("", id="m")
+            yield Label("", id="c")
+
+    def watch_version(self, v): self._set("v", f"⟨ HERMES {v} ⟩")
+    def watch_gateway_status(self, s):
+        col = GREEN if s == "RUNNING" else RED
+        self._set("g", f"[{col}]◉ {s}[/]")
+    def watch_session_count(self, n):
+        self._set("s", f"◉ SESSIONS: {n}")
+    def watch_model(self, m):
+        self._set("m", f"◉ MODEL: {m[:30]}")
+    def watch_clock(self, t):
+        self._set("c", f"[{CYAN}]◉ {t}[/]")
+
+    def _set(self, eid: str, text: str) -> None:
+        try:
+            self.query_one(f"#{eid}", Label).update(text)
+        except Exception:
+            pass
+
+
+class StatusPane(Static):
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            for n in ("ver", "gw", "plat", "cfg", "env"):
+                yield Label("", id=f"st-{n}")
+
+    def update_status(self, s: Status) -> None:
+        self._upd("ver", f"Version       : {s.version}  ({s.release_date})")
+        col = GREEN if s.gateway_running else RED
+        st = "RUNNING" if s.gateway_running else "STOPPED"
+        self._upd("gw", f"Gateway       : [{col}]{st}[/]  pid={s.gateway_pid or '-'}")
+        plat = ", ".join(f"{n}={p.get('state','?')}" for n, p in s.gateway_platforms.items()) if s.gateway_platforms else "None"
+        self._upd("plat", f"Platforms     : {plat}")
+        self._upd("cfg", f"Config path   : {s.config_path}")
+        self._upd("env", f"Environment   : {s.env_path}")
+
+    def _upd(self, n: str, txt: str) -> None:
+        try:
+            self.query_one(f"#st-{n}", Label).update(txt)
+        except Exception:
+            pass
+
+
+class SessionsPane(Static):
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("", id="sm")
+            t = DataTable(id="st", zebra_stripes=True)
+            t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Title")
+            yield t
+            yield Label("", id="sn")
+
+    def update_sessions(self, sessions, total):
+        t = self.query_one("#st", DataTable)
+        t.clear()
+        for s in sessions:
+            cost = f"${s.estimated_cost_usd:.4f}" if s.estimated_cost_usd else "-"
+            st = "ACTIVE" if s.is_active else "IDLE"
+            col = GREEN if s.is_active else CYAN
+            t.add_row(
+                s.session_id[:12], s.model[:22], s.platform[:8],
+                f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}", f"{cost:>9}",
+                f"[{col}]{st}[/]", (s.title or "-")[:40],
+            )
+        self._upd("sm", f"Total: {total}  ·  showing {len(sessions)}")
+
+    def update_search_results(self, results):
+        t = self.query_one("#st", DataTable)
+        t.clear()
+        for r in results:
+            t.add_row(
+                r.session_id[:12], r.model[:22] if r.model else "-", "-",
+                "-", "-", "-", f"[{MAGENTA}]MATCH[/]", r.snippet[:60],
+            )
+        self._upd("sm", f"Search: {len(results)}")
+
+    def _upd(self, n, txt):
+        try:
+            self.query_one(f"#{n}", Label).update(txt)
+        except Exception:
+            pass
+
+
+class ModelPane(Static):
+    def compose(self) -> ComposeResult:
+        with ScrollableContainer():
+            for n in ("name", "prov", "ctx", "maxo", "tools", "vision", "reason", "fam"):
+                yield Label("", id=f"md-{n}")
+
+    def update_model(self, m: ModelInfo) -> None:
+        self._upd("name", f"◉ Model   : {m.model}")
+        self._upd("prov", f"◉ Provider: {m.provider}")
+        self._upd("ctx", f"◉ Context : {m.effective_context_length:,d} (auto={m.auto_context_length} cfg={m.config_context_length})")
+        self._upd("maxo", f"◉ Max out : {m.capabilities.max_output_tokens:,d}")
+        c = m.capabilities
+        yes, no = "[green]YES[/]", "[red]NO[/]"
+        self._upd("tools", f"◉ Tools   : {yes if c.supports_tools else no}")
+        self._upd("vision", f"◉ Vision  : {yes if c.supports_vision else no}")
+        self._upd("reason", f"◉ Reason  : {yes if c.supports_reasoning else no}")
+        self._upd("fam", f"◉ Family  : {c.model_family}")
+
+    def _upd(self, n, txt):
+        try:
+            self.query_one(f"#md-{n}", Label).update(txt)
+        except Exception:
+            pass
+
+
+class ConfigPane(Static):
+    def compose(self) -> ComposeResult:
+        yield RichLog(id="cl", wrap=True, markup=True, highlight=True)
+
+    def update_config(self, text: str) -> None:
+        log = self.query_one("#cl", RichLog)
+        log.clear()
+        log.write(text or "[red]No config data[/]")
+
+
+class SkillsPane(Static):
+    def compose(self) -> ComposeResult:
+        t = DataTable(zebra_stripes=True)
+        t.add_columns("Status", "Name", "Description")
+        yield t
+
+    def update_skills(self, skills: list[Skill]) -> None:
+        t = self.query_one(DataTable)
+        t.clear()
+        for s in skills:
+            st = "[green]ON[/]" if s.enabled else "[red]OFF[/]"
+            t.add_row(st, s.name, (s.description or "-")[:60])
+
+
+class ToolsPane(Static):
+    def compose(self) -> ComposeResult:
+        t = DataTable(zebra_stripes=True)
+        t.add_columns("Status", "Toolset", "Enabled", "Configured", "Tools")
+        yield t
+
+    def update_tools(self, toolsets: list[Toolset]) -> None:
+        t = self.query_one(DataTable)
+        t.clear()
+        for ts in toolsets:
+            if ts.configured and ts.enabled:
+                st, en, cfg = "[green]OK[/]", "[green]ON[/]", "[green]OK[/]"
+            elif ts.configured:
+                st, en, cfg = "[magenta]ENABLED[/]", "[green]ON[/]", "[green]OK[/]"
+            else:
+                st, en, cfg = "[red]INACTIVE[/]", "[red]OFF[/]", "[red]NEEDS CFG[/]"
+            tools_preview = ", ".join(ts.tools[:4])
+            if len(ts.tools) > 4:
+                tools_preview += f" +{len(ts.tools)-4}"
+            t.add_row(st, ts.name[:20], en, cfg, tools_preview)
+
+
+class CronPane(Static):
+    def compose(self) -> ComposeResult:
+        t = DataTable(zebra_stripes=True)
+        t.add_columns("Status", "JobID", "Name", "Schedule", "Last Run", "Status")
+        yield t
+
+    def update_cron(self, jobs: list[CronJob]) -> None:
+        t = self.query_one(DataTable)
+        t.clear()
+        for j in jobs:
+            st = "[green]ON[/]" if j.enabled else "[red]OFF[/]"
+            lr = (j.last_run or "-")[:19]
+            ls = j.last_status or "-"
+            col = GREEN if (j.last_status or "").lower() == "success" else RED if j.last_status else ""
+            t.add_row(st, j.job_id[:12], j.name[:22], j.schedule[:12], lr, f"[{col}]{ls}[/]" if col else ls)
+
+
+class LogsPane(Static):
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
+            yield RichLog(id="lv", wrap=True, markup=True, highlight=True)
+
+    def append_log_line(self, line: str) -> None:
+        log = self.query_one("#lv", RichLog)
+        if "ERROR" in line or "FATAL" in line:
+            log.write(f"[red]{line}[/]")
+        elif "WARN" in line:
+            log.write(f"[yellow]{line}[/]")
+        elif "INFO" in line:
+            log.write(f"[cyan]{line}[/]")
+        elif "DEBUG" in line:
+            log.write(f"[green dim]{line}[/]")
+        else:
+            log.write(line)
+
+    def clear_logs(self) -> None:
+        self.query_one("#lv", RichLog).clear()
+
+
+class AnalyticsPane(Static):
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("", id="totals")
+            yield Label("─ By model ─" * 4)
+            tm = DataTable(id="atm"); tm.add_columns("Model", "In", "Out", "Cost"); yield tm
+            yield Label("─ Daily ─" * 4)
+            td = DataTable(id="atd"); td.add_columns("Date", "In", "Out", "Sess", "Cost"); yield td
+
+    def update_analytics(self, a: UsageAnalytics) -> None:
+        t = a.totals
+        self._upd("totals",
+            f"Totals ({a.period_days}d) – In: {t.get('input_tokens',0):,d}  "
+            f"Out: {t.get('output_tokens',0):,d}  "
+            f"Cost: ${t.get('estimated_cost',0):.2f}  Sessions: {t.get('sessions',0)}"
+        )
+        mt = self.query_one("#atm", DataTable); mt.clear()
+        for m in a.by_model:
+            mt.add_row(m.model[:28], f"{m.input_tokens:,d}", f"{m.output_tokens:,d}", f"${m.estimated_cost:.4f}")
+        dt = self.query_one("#atd", DataTable); dt.clear()
+        for d in a.daily[-14:]:
+            dt.add_row(d.day, f"{d.input_tokens:,d}", f"{d.output_tokens:,d}", str(d.sessions), f"${d.estimated_cost:.4f}")
+
+    def _upd(self, n, txt):
+        try:
+            self.query_one(f"#{n}", Label).update(txt)
+        except Exception:
+            pass
+
+
+class EnvPane(Static):
+    def compose(self) -> ComposeResult:
+        t = DataTable(zebra_stripes=True)
+        t.add_columns("Status", "Name", "Value", "Description")
+        yield t
+
+    def update_env(self, envs: list[EnvVar]) -> None:
+        t = self.query_one(DataTable)
+        t.clear()
+        for e in envs:
+            st = "[green]SET[/]" if e.is_set else "[gray]-[/]"
+            val = "********" if e.is_password and e.is_set else (e.redacted_value or "-")
+            desc = (e.description or "-")[:45]
+            t.add_row(st, e.name[:20], val[:25], desc)
+
+
+# ─── Main App ────────────────────────────────────────────────────────────
+
+class HermesHUDApp(App):
+    CSS = f"""
+    Screen {{ background: {BG}; }}
+    #cyber-header {{
+        height: 3; background: {PANEL};
+        border: solid {CYAN};
+        padding: 0 1; content-align: left middle;
+    }}
+    #cyber-header Label {{ color: {CYAN}; text-style: bold; margin-right: 2; }}
+
+    TabbedContent {{ height: 1fr; background: {BG}; }}
+    TabPane {{ background: {PANEL}; padding: 1; }}
+
+    DataTable {{
+        height: auto; background: {PANEL}; color: #e0e0e0;
+    }}
+    DataTable > .datatable--cursor {{ background: {CYAN}; color: black; }}
+    DataTable > .datatable--fixed {{ background: {PANEL}; }}
+    DataTable > .datatable--fixed-cursor {{ background: {CYAN}; color: black; }}
+
+    Footer {{ height: 3; background: {PANEL}; color: {CYAN}; content-align: center middle; }}
+
+    #sm, #sn {{ color: #888; }}
+    #lh {{ margin-bottom: 1; color: #666; }}
+    #lv {{ height: 1fr; background: {PANEL}; color: #e0e0e0; }}
+    #cl {{ height: 1fr; background: {PANEL}; color: #d0d0d0; }}
+    #totals {{ color: {GREEN}; text-style: bold; margin-bottom: 1; }}
+    """
+
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("/", "search", "Search"),
+        *[Binding(str(i), f"tab_{i}", f"Tab {i}") for i in range(1, 10)],
+        Binding("0", "tab_0", "Tab 10"),
+    ]
+
+    TITLE = "Hermes Agent HUD"
+    SUB_TITLE = "[ Cyberpunk Console ]"
+
+    def __init__(self, client: HermesDashboardClient) -> None:
+        super().__init__()
+        self.client = client
+        self._clock_timer = None
+        self.search_mode = False
+        self.search_query = ""
+        self.sessions_offset = 0
+        self.sessions_limit = 30
+
+    def compose(self) -> ComposeResult:
+        yield CyberHeader(id="cyber-header")
+        with TabbedContent(id="tabs"):
+            names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env"]
+            for i, name in enumerate(names):
+                tid = f"tab_{i+1}" if i < 9 else "tab_0"
+                with TabPane(name, id=tid):
+                    match name:
+                        case "Status":      yield StatusPane()
+                        case "Sessions":    yield SessionsPane()
+                        case "Model":       yield ModelPane()
+                        case "Config":      yield ConfigPane()
+                        case "Skills":      yield SkillsPane()
+                        case "Tools":       yield ToolsPane()
+                        case "Cron":        yield CronPane()
+                        case "Logs":        yield LogsPane()
+                        case "Analytics":   yield AnalyticsPane()
+                        case "Env":         yield EnvPane()
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._clock_timer = self.set_interval(1.0, self._tick)
+        self.set_interval(30.0, self._auto_refresh)
+        self._load_all()
+
+    def on_unmount(self) -> None:
+        if self._clock_timer:
+            self._clock_timer.stop()
+
+    def _tick(self) -> None:
+        self.query_one(CyberHeader).clock = datetime.now().strftime("%H:%M:%S")
+
+    def _auto_refresh(self) -> None:
+        self._load_status_sessions()
+
+    def action_refresh(self) -> None:
+        self._load_all()
+
+    @work(exclusive=True, thread=True)
+    def _load_all(self) -> None:
+        self._do_refresh_status()
+        self._do_refresh_sessions()
+        self._do_refresh_model()
+        self._do_refresh_config()
+        self._do_refresh_skills()
+        self._do_refresh_tools()
+        self._do_refresh_cron()
+        self._do_refresh_logs()
+        self._do_refresh_analytics()
+        self._do_refresh_env()
+
+    @work(exclusive=True, thread=True)
+    def _load_status_sessions(self) -> None:
+        self._do_refresh_status()
+        self._do_refresh_sessions()
+
+    def _do_refresh_status(self) -> None:
+        try:
+            s = self.client.get_status()
+            self.call_from_thread(self._update_status, s)
+        except Exception:
+            pass
+
+    def _update_status(self, s: Status) -> None:
+        h = self.query_one(CyberHeader)
+        h.version = s.version
+        h.gateway_status = "RUNNING" if s.gateway_running else "STOPPED"
+        h.session_count = s.active_sessions
+        h.model = next(iter(s.gateway_platforms.values()), {}).get("model", "unknown") if s.gateway_platforms else "unknown"
+        self.query_one("#status-pane", StatusPane).update_status(s)
+
+    def _do_refresh_sessions(self) -> None:
+        try:
+            sessions, total = self.client.list_sessions(self.sessions_limit, self.sessions_offset)
+            self.call_from_thread(self._update_sessions, sessions, total)
+        except Exception:
+            pass
+
+    def _update_sessions(self, sessions: list[HermesSession], total: int) -> None:
+        self.query_one("#sessions-pane", SessionsPane).update_sessions(sessions, total)
+
+    def _do_refresh_model(self) -> None:
+        try:
+            m = self.client.get_model_info()
+            self.call_from_thread(self._update_model, m)
+        except Exception:
+            pass
+
+    def _update_model(self, m: ModelInfo) -> None:
+        self.query_one("#model-pane", ModelPane).update_model(m)
+
+    def _do_refresh_config(self) -> None:
+        try:
+            txt = self.client.get_config_raw()
+            self.call_from_thread(self._update_config, txt)
+        except Exception:
+            pass
+
+    def _update_config(self, txt: str) -> None:
+        self.query_one("#config-pane", ConfigPane).update_config(txt)
+
+    def _do_refresh_skills(self) -> None:
+        try:
+            skills = self.client.list_skills()
+            self.call_from_thread(self._update_skills, skills)
+        except Exception:
+            pass
+
+    def _update_skills(self, skills: list[Skill]) -> None:
+        self.query_one("#skills-pane", SkillsPane).update_skills(skills)
+
+    def _do_refresh_tools(self) -> None:
+        try:
+            toolsets = self.client.list_toolsets()
+            self.call_from_thread(self._update_tools, toolsets)
+        except Exception:
+            pass
+
+    def _update_tools(self, toolsets: list[Toolset]) -> None:
+        self.query_one("#tools-pane", ToolsPane).update_tools(toolsets)
+
+    def _do_refresh_cron(self) -> None:
+        try:
+            jobs = self.client.list_cron_jobs()
+            self.call_from_thread(self._update_cron, jobs)
+        except Exception:
+            pass
+
+    def _update_cron(self, jobs: list[CronJob]) -> None:
+        self.query_one("#cron-pane", CronPane).update_cron(jobs)
+
+    def _do_refresh_logs(self) -> None:
+        try:
+            data = self.client.get_logs(file="agent", lines=50)
+            lines = data.get("lines", [])
+            self.call_from_thread(self._update_logs, lines)
+        except Exception:
+            pass
+
+    def _update_logs(self, lines: list[str]) -> None:
+        pane = self.query_one("#logs-pane", LogsPane)
+        pane.clear_logs()
+        for line in lines:
+            pane.append_log_line(line)
+
+    def _do_refresh_analytics(self) -> None:
+        try:
+            a = self.client.get_usage_analytics(30)
+            self.call_from_thread(self._update_analytics, a)
+        except Exception:
+            pass
+
+    def _update_analytics(self, a: UsageAnalytics) -> None:
+        self.query_one("#analytics-pane", AnalyticsPane).update_analytics(a)
+
+    def _do_refresh_env(self) -> None:
+        try:
+            envs = self.client.list_env_vars()
+            self.call_from_thread(self._update_env, envs)
+        except Exception:
+            pass
+
+    def _update_env(self, envs: list[EnvVar]) -> None:
+        self.query_one("#env-pane", EnvPane).update_env(envs)
+
+    # ── Actions ───────────────────────────────────────────────────────────
+
+    def action_quit(self) -> None:
+        self.exit()
+
+    def action_search(self) -> None:
+        if self.query_one(TabbedContent).active in ("tab_2", "tab_8"):
+            self.search_mode = not self.search_mode
+            self.notify("Type letters then ENTER · ESC to cancel" if self.search_mode else "Search off", timeout=2)
+
+    async def on_key(self, event) -> None:
+        if self.search_mode and event.key.isprintable() and len(event.key) == 1:
+            self.search_query += event.key
+            self.notify(f"Search: {self.search_query}", timeout=2)
+        elif self.search_mode and event.key == "enter":
+            self.search_mode = False
+            # TODO: implement actual search call here
+            self.notify(f"Search '{self.search_query}' – not implemented yet", timeout=3)
+            self.search_query = ""
+        elif self.search_mode and event.key == "escape":
+            self.search_mode = False
+            self.notify("Search cancelled", timeout=1)
+
+    def action_tab_1(self): self._set_active("tab_1")
+    def action_tab_2(self): self._set_active("tab_2")
+    def action_tab_3(self): self._set_active("tab_3")
+    def action_tab_4(self): self._set_active("tab_4")
+    def action_tab_5(self): self._set_active("tab_5")
+    def action_tab_6(self): self._set_active("tab_6")
+    def action_tab_7(self): self._set_active("tab_7")
+    def action_tab_8(self): self._set_active("tab_8")
+    def action_tab_9(self): self._set_active("tab_9")
+    def action_tab_0(self): self._set_active("tab_0")
+
+    def _set_active(self, tid: str) -> None:
+        self.query_one(TabbedContent).active = tid
+
+    @on(TabbedContent.TabActivated)
+    def on_tab_activated(self, event):
+        tid = event.tab.id
+        if tid == "tab_2":
+            self._load_status_sessions()
+        elif tid == "tab_8":
+            self._do_refresh_logs()
 
 
 def run_app(args) -> None:
-    """Launch the interactive TUI HUD."""
+    """Launch the TUI HUD."""
     try:
-        from textual.app import App
+        from textual.app import App  # noqa: F401
     except ImportError:
-        print("ERROR: textual is required for TUI mode. Install with: pip install textual", file=__import__("sys").stderr)
+        import sys
+        print("ERROR: textual is required. Install with: pip install textual", file=sys.stderr)
         raise SystemExit(1)
 
     from .client.api import HermesDashboardClient
 
     client = HermesDashboardClient(base_url=args.base_url, timeout=args.timeout)
 
-    # Quick smoke test before launching TUI
     try:
         status = client.get_status()
     except Exception as exc:
-        print(f"ERROR: Cannot reach Hermes dashboard: {exc}", file=__import__("sys").stderr)
+        import sys
+        print(f"ERROR: Cannot reach Hermes dashboard: {exc}", file=sys.stderr)
         raise SystemExit(1)
 
     print(f"Connected to Hermes {status.version} (gateway {'running' if status.gateway_running else 'stopped'})")
-    print("TUI HUD not yet built — use CLI subcommands for now.")
-    print("  hermes-hud status|sessions|config|model|cron|skills|tools|logs|env|analytics|oauth")
+    print("Launching TUI HUD…")
+    app = HermesHUDApp(client)
+    app.run()
