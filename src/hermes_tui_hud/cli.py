@@ -1,319 +1,282 @@
+"""CLI entry point for hermes-hud."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from typing import Any
 
-from .app import run_tui
-from .client.api import HermesAPIClient, HermesAPIError
-from .views import render_agents_text, render_overview_text, render_sessions_text
+from . import __version__
+from .client.api import HermesDashboardClient, HermesAPIError
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hermes-hud", description="Hermes terminal operator console")
-    parser.add_argument("--base-url", default=None, help="Hermes Web UI base URL")
-    parser.add_argument("--password", default=None, help="Hermes Web UI password")
-    parser.add_argument("--json", action="store_true", help="Emit JSON where possible")
-
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    status = sub.add_parser("status", help="Show status information")
-    status_sub = status.add_subparsers(dest="status_command", required=True)
-    status_sub.add_parser("summary", help="Summary of resources, profiles, sessions, and alerts")
-
-    agents = sub.add_parser("agents", help="Agent/profile operations")
-    agents_sub = agents.add_subparsers(dest="agents_command", required=True)
-    agents_sub.add_parser("list", help="List profiles")
-
-    sessions = sub.add_parser("sessions", help="Session operations")
-    sessions_sub = sessions.add_subparsers(dest="sessions_command", required=True)
-    sessions_sub.add_parser("list", help="List sessions")
-    sessions_search = sessions_sub.add_parser("search", help="Search sessions by title or content")
-    sessions_search.add_argument("query", help="Search query")
-    sessions_search.add_argument("--depth", type=int, default=24, help="Message depth for content search")
-    sessions_export = sessions_sub.add_parser("export", help="Export a session to JSON")
-    sessions_export.add_argument("session_id", help="Session id")
-    sessions_export.add_argument("--dest", default="/tmp", help="Destination directory")
-
-    gateway = sub.add_parser("gateway", help="Gateway operations")
-    gateway_sub = gateway.add_subparsers(dest="gateway_command", required=True)
-    gateway_status = gateway_sub.add_parser("status", help="Show gateway status")
-    gateway_status.add_argument("--profile", default=None, help="Profile name")
-    gateway_logs = gateway_sub.add_parser("logs", help="Show gateway logs")
-    gateway_logs.add_argument("--profile", default=None, help="Profile name")
-    gateway_logs.add_argument("--lines", type=int, default=120, help="Number of log lines")
-    for action in ("start", "stop", "restart"):
-        gateway_action = gateway_sub.add_parser(action, help=f"{action.title()} gateway service")
-        gateway_action.add_argument("--profile", default=None, help="Profile name")
-
-    cron = sub.add_parser("cron", help="Cron operations")
-    cron_sub = cron.add_subparsers(dest="cron_command", required=True)
-    cron_sub.add_parser("list", help="List cron jobs")
-    cron_add = cron_sub.add_parser("add", help="Create a cron job")
-    cron_add.add_argument("--prompt", required=True, help="Prompt text")
-    cron_add.add_argument("--schedule", required=True, help="Cron schedule expression")
-    cron_add.add_argument("--name", default=None, help="Optional job name")
-    for action in ("run", "pause", "resume", "delete"):
-        cron_action = cron_sub.add_parser(action, help=f"{action.title()} a cron job")
-        cron_action.add_argument("job_id", help="Cron job id")
-
-    maintenance = sub.add_parser("maintenance", help="Maintenance actions")
-    maintenance_sub = maintenance.add_subparsers(dest="maintenance_command", required=True)
-    maintenance_check = maintenance_sub.add_parser("check-updates", help="Check for updates")
-    maintenance_check.add_argument("--force", action="store_true", help="Force re-check")
-    maintenance_apply = maintenance_sub.add_parser("apply-update", help="Apply update")
-    maintenance_apply.add_argument("target", choices=["webui", "agent"], help="Update target")
-    maintenance_sub.add_parser("cleanup-sessions", help="Cleanup stale untitled empty sessions")
-    maintenance_sub.add_parser("cleanup-zero-message", help="Cleanup all zero-message sessions")
-
-    sub.add_parser("tui", help="Launch the full-screen TUI")
-    return parser
+def _client(args: argparse.Namespace) -> HermesDashboardClient:
+    return HermesDashboardClient(base_url=args.base_url, timeout=args.timeout)
 
 
-def _client(args: argparse.Namespace) -> HermesAPIClient:
-    return HermesAPIClient(base_url=args.base_url, password=args.password)
+def _fmt_json(obj) -> str:
+    """Pretty-print an object as JSON, handling dataclasses."""
+    if hasattr(obj, "__dataclass_fields__"):
+        from dataclasses import asdict
+        return json.dumps(asdict(obj), indent=2, default=str)
+    if isinstance(obj, list):
+        return json.dumps(
+            [asdict(i) if hasattr(i, "__dataclass_fields__") else i for i in obj],
+            indent=2, default=str,
+        )
+    if isinstance(obj, dict):
+        return json.dumps(obj, indent=2, default=str)
+    return str(obj)
 
 
-def _emit_json(payload: Any) -> int:
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-    return 0
+def cmd_status(args: argparse.Namespace) -> None:
+    c = _client(args)
+    s = c.get_status()
+    print(f"Hermes {s.version}  gateway={'RUNNING' if s.gateway_running else 'STOPPED'}  "
+          f"pid={s.gateway_pid or '-'}  sessions={s.active_sessions}")
+    if s.gateway_state:
+        print(f"  state: {s.gateway_state}")
+    if s.gateway_platforms:
+        for name, state in s.gateway_platforms.items():
+            print(f"  {name}: {state.get('state', '?')}")
 
 
-def _confirm(prompt: str) -> bool:
-    response = input(f"{prompt} [y/N]: ").strip().lower()
-    return response in {"y", "yes"}
+def cmd_sessions(args: argparse.Namespace) -> None:
+    c = _client(args)
+    if args.search:
+        results = c.search_sessions(args.search, limit=args.limit)
+        for r in results:
+            print(f"  {r.session_id[:12]}  {r.role or '?':8s}  {r.snippet[:80]}")
+        return
+    sessions, total = c.list_sessions(limit=args.limit, offset=args.offset)
+    print(f"Sessions ({total} total, showing {len(sessions)}):")
+    for s in sessions:
+        cost = f"${s.estimated_cost_usd:.4f}" if s.estimated_cost_usd else "-"
+        active = "*" if s.is_active else " "
+        print(f"  {active} {s.session_id[:12]}  {s.model[:30]:30s}  "
+              f"in={s.input_tokens:>8d} out={s.output_tokens:>8d}  {cost:>10s}  "
+              f"{(s.title or '-')[:50]}")
 
 
-def _cron_schedule_label(job: dict[str, Any]) -> str:
-    value = job.get("schedule_display") or job.get("schedule")
-    if isinstance(value, str) and value.strip():
-        return value
-    if isinstance(value, dict):
-        for key in ("display", "expr", "kind"):
-            if isinstance(value.get(key), str) and value.get(key):
-                return str(value[key])
-        return json.dumps(value, ensure_ascii=False)
-    return "manual"
+def cmd_session_detail(args: argparse.Namespace) -> None:
+    c = _client(args)
+    s = c.get_session(args.session_id)
+    print(_fmt_json(s))
 
 
-def _cron_job_label(job: dict[str, Any]) -> str:
-    return str(job.get("name") or job.get("id") or "unnamed job")
+def cmd_session_messages(args: argparse.Namespace) -> None:
+    c = _client(args)
+    data = c.get_session_messages(args.session_id)
+    for msg in data.get("messages", []):
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+            )
+        print(f"[{role}] {str(content)[:200]}")
 
 
-def _print_gateway_status(payload: dict[str, Any]) -> None:
-    print("Gateway Status")
-    print(f"Profile: {payload.get('profile') or 'default'}")
-    print(f"Service: {payload.get('service') or 'unknown'}")
-    print(f"Installed: {bool(payload.get('installed'))}")
-    print(f"Active: {bool(payload.get('active'))}")
-    print(f"Enabled: {bool(payload.get('enabled'))}")
-    if payload.get("status"):
-        print(f"Status: {payload['status']}")
-    if payload.get("message"):
-        print(f"Message: {payload['message']}")
+def cmd_config(args: argparse.Namespace) -> None:
+    c = _client(args)
+    if args.raw:
+        print(c.get_config_raw())
+    elif args.schema:
+        print(_fmt_json(c.get_config_schema()))
+    elif args.defaults:
+        print(_fmt_json(c.get_config_defaults()))
+    else:
+        print(_fmt_json(c.get_config()))
 
 
-def _print_cron_jobs(jobs: list[dict[str, Any]]) -> None:
+def cmd_model(args: argparse.Namespace) -> None:
+    c = _client(args)
+    m = c.get_model_info()
+    print(f"Model:     {m.model}")
+    print(f"Provider:  {m.provider}")
+    print(f"Context:   {m.effective_context_length:,d} tokens (auto={m.auto_context_length:,d} config={m.config_context_length:,d})")
+    caps = m.capabilities
+    print(f"Tools:     {'yes' if caps.supports_tools else 'no'}  "
+          f"Vision: {'yes' if caps.supports_vision else 'no'}  "
+          f"Reasoning: {'yes' if caps.supports_reasoning else 'no'}")
+    print(f"Family:    {caps.model_family}  Max output: {caps.max_output_tokens:,d}")
+
+
+def cmd_cron(args: argparse.Namespace) -> None:
+    c = _client(args)
+    jobs = c.list_cron_jobs()
     if not jobs:
-        print("No cron jobs found.")
+        print("No cron jobs.")
         return
-    print("Cron Jobs")
-    for job in jobs:
-        print(f"- {_cron_job_label(job)} ({job.get('id') or 'no-id'})")
-        print(f"  schedule={_cron_schedule_label(job)} enabled={job.get('enabled', True)}")
-        print(f"  last={job.get('last_run_at') or job.get('last_run') or job.get('last_status') or job.get('state') or 'pending'}")
-        if job.get("prompt"):
-            print(f"  prompt={job['prompt']}")
+    for j in jobs:
+        state = "ON " if j.enabled else "OFF"
+        last = j.last_status or "-"
+        print(f"  [{state}] {j.job_id[:12]}  {j.name[:30]:30s}  "
+              f"schedule={j.schedule}  last={last}")
 
 
-def _print_update_summary(payload: dict[str, Any]) -> None:
-    if payload.get("disabled"):
-        print("Update checks are disabled.")
+def cmd_skills(args: argparse.Namespace) -> None:
+    c = _client(args)
+    skills = c.list_skills()
+    if not skills:
+        print("No skills found.")
         return
-    print("Update Summary")
-    for key in ("webui", "agent"):
-        block = payload.get(key) or {}
-        if not isinstance(block, dict):
-            continue
-        print(f"- {key}")
-        print(f"  branch={block.get('branch') or 'unknown'} behind={block.get('behind') or 0}")
-        print(f"  current={block.get('current_sha') or 'unknown'} latest={block.get('latest_sha') or 'unknown'}")
+    for s in skills:
+        state = "ON " if s.enabled else "OFF"
+        print(f"  [{state}] {s.name:40s}  {s.description[:60]}")
 
 
-def _print_session_search(results: list[dict[str, Any]], query: str) -> None:
-    if not results:
-        print(f"No sessions matched: {query}")
+def cmd_tools(args: argparse.Namespace) -> None:
+    c = _client(args)
+    toolsets = c.list_toolsets()
+    if not toolsets:
+        print("No toolsets found.")
         return
-    print(f"Session Search · {query}")
-    for session in results:
-        flags = []
-        if session.get("pinned"):
-            flags.append("pinned")
-        if session.get("archived"):
-            flags.append("archived")
-        match = session.get("match_type") or "match"
-        print(f"- {session.get('title') or 'Untitled'} ({session.get('session_id') or 'no-id'})")
-        print(f"  profile={session.get('profile') or 'default'} model={session.get('model') or 'unknown'} match={match}")
-        if flags:
-            print(f"  flags={', '.join(flags)}")
+    for t in toolsets:
+        state = "ON " if t.enabled else "OFF"
+        cfg = "ok" if t.configured else "NEEDS CONFIG"
+        print(f"  [{state}] {t.name:25s}  {cfg:12s}  tools: {', '.join(t.tools[:5])}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
+def cmd_logs(args: argparse.Namespace) -> None:
+    c = _client(args)
+    data = c.get_logs(file=args.file, lines=args.lines, level=args.level,
+                      component=args.component, search=args.search)
+    for line in data.get("lines", []):
+        print(line)
+
+
+def cmd_env(args: argparse.Namespace) -> None:
+    c = _client(args)
+    envs = c.list_env_vars()
+    for e in envs:
+        state = "SET" if e.is_set else "   "
+        val = e.redacted_value or "-"
+        print(f"  [{state}] {e.name:35s}  {val:20s}  {e.description[:50]}")
+
+
+def cmd_analytics(args: argparse.Namespace) -> None:
+    c = _client(args)
+    a = c.get_usage_analytics(days=args.days)
+    print(f"Usage analytics (last {a.period_days} days):")
+    print(f"  Totals: in={a.totals.get('input_tokens', 0):,d}  "
+          f"out={a.totals.get('output_tokens', 0):,d}  "
+          f"est_cost=${a.totals.get('estimated_cost', 0):.2f}  "
+          f"sessions={a.totals.get('sessions', 0)}")
+    print()
+    if a.by_model:
+        print("  By model:")
+        for m in a.by_model:
+            print(f"    {m.model[:40]:40s}  in={m.input_tokens:,d}  out={m.output_tokens:,d}  "
+                  f"${m.estimated_cost:.2f}")
+
+
+def cmd_oauth(args: argparse.Namespace) -> None:
+    c = _client(args)
+    providers = c.list_oauth_providers()
+    if not providers:
+        print("No OAuth providers configured.")
+        return
+    for p in providers:
+        state = "IN " if p.logged_in else "OUT"
+        print(f"  [{state}] {p.name:20s}  flow={p.flow:12s}  source={p.source_label or '-'}")
+
+
+def cmd_tui(args: argparse.Namespace) -> None:
+    from .app import run_app
+    run_app(args)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="hermes-hud",
+        description="Hermes Agent TUI HUD — terminal operator console",
+    )
+    parser.add_argument("--version", action="version", version=f"hermes-hud {__version__}")
+    parser.add_argument("--base-url", default=None, help="Dashboard API base URL (default: http://127.0.0.1:9119)")
+    parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+
+    sub = parser.add_subparsers(dest="command", help="Subcommand")
+
+    # status
+    p_status = sub.add_parser("status", help="Gateway & server status")
+    p_status.set_defaults(func=cmd_status)
+
+    # sessions
+    p_sess = sub.add_parser("sessions", help="List and search sessions")
+    p_sess.add_argument("--limit", type=int, default=20)
+    p_sess.add_argument("--offset", type=int, default=0)
+    p_sess.add_argument("--search", "-s", help="FTS5 search query")
+    p_sess.set_defaults(func=cmd_sessions)
+
+    # session detail
+    p_detail = sub.add_parser("session", help="Session detail / messages")
+    p_detail.add_argument("session_id")
+    p_detail.add_argument("--messages", "-m", action="store_true", help="Show messages")
+    p_detail.set_defaults(func=cmd_session_detail)
+
+    # config
+    p_cfg = sub.add_parser("config", help="View Hermes config")
+    p_cfg.add_argument("--raw", action="store_true", help="Raw YAML")
+    p_cfg.add_argument("--schema", action="store_true", help="Config schema")
+    p_cfg.add_argument("--defaults", action="store_true", help="Default values")
+    p_cfg.set_defaults(func=cmd_config)
+
+    # model
+    p_model = sub.add_parser("model", help="Current model info")
+    p_model.set_defaults(func=cmd_model)
+
+    # cron
+    p_cron = sub.add_parser("cron", help="Cron jobs")
+    p_cron.set_defaults(func=cmd_cron)
+
+    # skills
+    p_skills = sub.add_parser("skills", help="List skills")
+    p_skills.set_defaults(func=cmd_skills)
+
+    # tools
+    p_tools = sub.add_parser("tools", help="List toolsets")
+    p_tools.set_defaults(func=cmd_tools)
+
+    # logs
+    p_logs = sub.add_parser("logs", help="Agent/gateway logs")
+    p_logs.add_argument("--file", default="agent", choices=["agent", "errors", "gateway"])
+    p_logs.add_argument("--lines", type=int, default=100)
+    p_logs.add_argument("--level", default=None)
+    p_logs.add_argument("--component", default=None)
+    p_logs.add_argument("--search", default=None)
+    p_logs.set_defaults(func=cmd_logs)
+
+    # env
+    p_env = sub.add_parser("env", help="Environment variables")
+    p_env.set_defaults(func=cmd_env)
+
+    # analytics
+    p_analytics = sub.add_parser("analytics", help="Usage analytics")
+    p_analytics.add_argument("--days", type=int, default=30)
+    p_analytics.set_defaults(func=cmd_analytics)
+
+    # oauth
+    p_oauth = sub.add_parser("oauth", help="OAuth providers")
+    p_oauth.set_defaults(func=cmd_oauth)
+
+    # tui
+    p_tui = sub.add_parser("tui", help="Launch interactive TUI HUD")
+    p_tui.set_defaults(func=cmd_tui)
+
     args = parser.parse_args(argv)
-    client = _client(args)
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
     try:
-        if args.command == "status" and args.status_command == "summary":
-            if args.json:
-                return _emit_json(client.summary())
-            print(render_overview_text(client))
-            return 0
-
-        if args.command == "agents" and args.agents_command == "list":
-            if args.json:
-                return _emit_json([profile.__dict__ for profile in client.list_profiles()])
-            print(render_agents_text(client))
-            return 0
-
-        if args.command == "sessions" and args.sessions_command == "list":
-            if args.json:
-                return _emit_json([session.__dict__ for session in client.list_sessions()])
-            print(render_sessions_text(client))
-            return 0
-
-        if args.command == "sessions" and args.sessions_command == "search":
-            payload = client.search_sessions(args.query, content=True, depth=args.depth)
-            if args.json:
-                return _emit_json(payload)
-            _print_session_search(payload, args.query)
-            return 0
-
-        if args.command == "sessions" and args.sessions_command == "export":
-            target = client.export_session(args.session_id, dest_dir=args.dest)
-            if args.json:
-                return _emit_json({"ok": True, "path": str(target)})
-            print(f"Exported session to {target}")
-            return 0
-
-        if args.command == "gateway":
-            if args.gateway_command == "status":
-                payload = client.gateway_status(profile=args.profile)
-                if args.json:
-                    return _emit_json(payload)
-                _print_gateway_status(payload)
-                return 0
-
-            if args.gateway_command == "logs":
-                payload = client.gateway_logs(profile=args.profile, lines=args.lines)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("logs") or "")
-                return 0
-
-            if args.gateway_command in {"start", "stop", "restart"}:
-                payload = client.gateway_action(args.gateway_command, profile=args.profile)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Gateway {args.gateway_command} requested.")
-                return 0
-
-        if args.command == "cron":
-            if args.cron_command == "list":
-                jobs = client.list_cron_jobs()
-                if args.json:
-                    return _emit_json(jobs)
-                _print_cron_jobs(jobs)
-                return 0
-
-            if args.cron_command == "add":
-                payload = client.create_cron_job(prompt=args.prompt, schedule=args.schedule, name=args.name)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or "Cron job created.")
-                return 0
-
-            if args.cron_command == "run":
-                payload = client.run_cron_job(args.job_id)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Cron job {args.job_id} run requested.")
-                return 0
-
-            if args.cron_command == "pause":
-                payload = client.pause_cron_job(args.job_id)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Cron job {args.job_id} paused.")
-                return 0
-
-            if args.cron_command == "resume":
-                payload = client.resume_cron_job(args.job_id)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Cron job {args.job_id} resumed.")
-                return 0
-
-            if args.cron_command == "delete":
-                if not _confirm(f"Delete cron job {args.job_id}?"):
-                    print("Cancelled.")
-                    return 0
-                payload = client.delete_cron_job(args.job_id)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Cron job {args.job_id} deleted.")
-                return 0
-
-        if args.command == "maintenance":
-            if args.maintenance_command == "check-updates":
-                payload = client.check_updates(force=args.force)
-                if args.json:
-                    return _emit_json(payload)
-                _print_update_summary(payload)
-                return 0
-
-            if args.maintenance_command == "apply-update":
-                if not _confirm(f"Apply update to {args.target}?"):
-                    print("Cancelled.")
-                    return 0
-                payload = client.apply_update(args.target)
-                if args.json:
-                    return _emit_json(payload)
-                print(payload.get("message") or f"Update requested for {args.target}.")
-                return 0
-
-            if args.maintenance_command == "cleanup-sessions":
-                if not _confirm("Cleanup stale untitled empty sessions?"):
-                    print("Cancelled.")
-                    return 0
-                payload = client.cleanup_sessions(zero_only=False)
-                if args.json:
-                    return _emit_json(payload)
-                print(f"Cleaned {payload.get('cleaned', 0)} sessions.")
-                return 0
-
-            if args.maintenance_command == "cleanup-zero-message":
-                if not _confirm("Cleanup all zero-message sessions?"):
-                    print("Cancelled.")
-                    return 0
-                payload = client.cleanup_sessions(zero_only=True)
-                if args.json:
-                    return _emit_json(payload)
-                print(f"Cleaned {payload.get('cleaned', 0)} sessions.")
-                return 0
-
-        if args.command == "tui":
-            return run_tui(client)
+        args.func(args)
     except HermesAPIError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-    parser.print_help()
-    return 0
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

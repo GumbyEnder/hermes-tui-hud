@@ -1,4 +1,35 @@
-from .api import HermesAPIClient
-from .models import AgentProfile, HermesAlert, HermesSession
+from .api import HermesDashboardClient
+from .models import (
+    ActionStatus,
+    CronJob,
+    DashboardTheme,
+    DailyUsage,
+    EnvVar,
+    HermesSession,
+    ModelCapabilities,
+    ModelInfo,
+    ModelUsage,
+    OAuthProvider,
+    Skill,
+    Status,
+    Toolset,
+    UsageAnalytics,
+)
 
-__all__ = ["HermesAPIClient", "AgentProfile", "HermesAlert", "HermesSession"]
+__all__ = [
+    "HermesDashboardClient",
+    "ActionStatus",
+    "CronJob",
+    "DashboardTheme",
+    "DailyUsage",
+    "EnvVar",
+    "HermesSession",
+    "ModelCapabilities",
+    "ModelInfo",
+    "ModelUsage",
+    "OAuthProvider",
+    "Skill",
+    "Status",
+    "Toolset",
+    "UsageAnalytics",
+]
