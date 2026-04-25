@@ -1,12 +1,12 @@
 """Cyberpunk Hermes Dashboard TUI HUD  –  Status · Sessions · Model · Config
     Skills · Tools · Cron · Logs · Analytics · Env
 
-Keybindings:  q=Quit  r=Refresh  /=Search  1-9/0=Switch Tabs
+Keybindings:  q=Quit  r=Refresh  /=Search  1-9/0=Tabs  t=ToggleSkill  e=EditConfig  Ctrl+S=Save
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from textual.reactive import reactive
 from textual import on, work
@@ -22,6 +22,7 @@ from textual.widgets import (
     Static,
     TabbedContent,
     TabPane,
+    TextArea,
 )
 
 from .client.api import HermesDashboardClient
@@ -29,6 +30,39 @@ from .client.models import (
     CronJob, EnvVar, HermesSession, ModelInfo, SessionSearchResult,
     Skill, Status, Toolset, UsageAnalytics,
 )
+
+def _short_rel_time(iso: str | None) -> str:
+    """Return compact relative time: 30s / 5m / 2h / 3D / 1W."""
+    if not iso:
+        return "-"
+    try:
+        # Hermes timestamps: ISO 8601, usually with microseconds and Z suffix
+        # Normalize: replace Z with +00:00 for fromisoformat
+        iso_norm = iso.replace("Z", "+00:00") if iso.endswith("Z") else iso
+        dt = datetime.fromisoformat(iso_norm)
+        # Make timezone-aware if naive (assume UTC)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        secs = diff.total_seconds()
+        if secs < 60:
+            return f"{int(secs)}s"
+        mins = secs / 60
+        if mins < 60:
+            return f"{int(mins)}m"
+        hours = mins / 60
+        if hours < 24:
+            return f"{int(hours)}h"
+        days = hours / 24
+        if days < 7:
+            return f"{int(days)}D"
+        weeks = days / 7
+        return f"{int(weeks)}W"
+    except Exception:
+        return "?"
+
+
 
 # ─── Colors ─────────────────────────────────────────────────────────────
 CYAN, MAGENTA, GREEN, RED, BG, PANEL = (
@@ -97,7 +131,7 @@ class SessionsPane(Static):
         with Vertical():
             yield Label("", id="sm")
             t = DataTable(id="st", zebra_stripes=True)
-            t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Title")
+            t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Last Act", "Title")
             yield t
             yield Label("", id="sn")
 
@@ -108,10 +142,11 @@ class SessionsPane(Static):
             cost = f"${s.estimated_cost_usd:.4f}" if s.estimated_cost_usd else "-"
             st = "ACTIVE" if s.is_active else "IDLE"
             col = GREEN if s.is_active else CYAN
+            last = _short_rel_time(s.last_active) if s.last_active else "-"
             t.add_row(
                 s.session_id[:12], s.model[:22], s.platform[:8],
                 f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}", f"{cost:>9}",
-                f"[{col}]{st}[/]", (s.title or "-")[:40],
+                f"[{col}]{st}[/]", last, (s.title or "-")[:40],
             )
         self._upd("sm", f"Total: {total}  ·  showing {len(sessions)}")
 
@@ -158,18 +193,51 @@ class ModelPane(Static):
 
 
 class ConfigPane(Static):
+    edit_mode = reactive(False)
     def compose(self) -> ComposeResult:
-        yield RichLog(id="cl", wrap=True, markup=True, highlight=True)
+        # Display mode container
+        with Vertical(id="cfg-display"):
+            yield RichLog(id="cl", wrap=True, markup=True, highlight=True)
+        # Edit mode container (hidden by default)
+        with Vertical(id="cfg-edit", classes="hidden"):
+            yield TextArea(id="cfg-editor", language="yaml", show_line_numbers=True)
 
     def update_config(self, text: str) -> None:
+        # If we're in edit mode, force back to display
+        if self.edit_mode:
+            self.edit_mode = False
+        self._last_config_text = text or ""
         log = self.query_one("#cl", RichLog)
         log.clear()
-        log.write(text or "[red]No config data[/]")
+        log.write(self._last_config_text)
 
+    def get_editable_text(self) -> str:
+        """Get current editor content for saving."""
+        editor = self.query_one("#cfg-editor", TextArea)
+        return editor.text
+
+
+
+
+    def _watch_edit_mode(self, old: bool, new: bool) -> None:
+        disp = self.query_one("#cfg-display", Vertical)
+        edit = self.query_one("#cfg-edit", Vertical)
+        disp.display = not new
+        edit.display = new
+        if new:
+            # Enter edit mode — load current config into editor
+            editor = self.query_one("#cfg-editor", TextArea)
+            editor.clear()
+            editor.insert(self._last_config_text)
+            self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3)
+        else:
+            # Exiting edit mode — clear editor
+            editor = self.query_one("#cfg-editor", TextArea)
+            editor.clear()
 
 class SkillsPane(Static):
     def compose(self) -> ComposeResult:
-        t = DataTable(zebra_stripes=True)
+        t = DataTable(zebra_stripes=True, cursor_type="row")
         t.add_columns("Status", "Name", "Description")
         yield t
 
@@ -178,7 +246,11 @@ class SkillsPane(Static):
         t.clear()
         for s in skills:
             st = "[green]ON[/]" if s.enabled else "[red]OFF[/]"
-            t.add_row(st, s.name, (s.description or "-")[:60])
+            t.add_row(st, s.name, (s.description or "-")[:60], key=s.name)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Row selected — cursor_row already updates, no extra state needed."""
+        pass
 
 
 class ToolsPane(Static):
@@ -318,6 +390,7 @@ class HermesHUDApp(App):
     #lv {{ height: 1fr; background: {PANEL}; color: #e0e0e0; }}
     #cl {{ height: 1fr; background: {PANEL}; color: #d0d0d0; }}
     #totals {{ color: {GREEN}; text-style: bold; margin-bottom: 1; }}
+    .hidden {{ display: none; }}
     """
 
     BINDINGS = [
@@ -325,7 +398,12 @@ class HermesHUDApp(App):
         Binding("r", "refresh", "Refresh"),
         Binding("/", "search", "Search"),
         *[Binding(str(i), f"tab_{i}", f"Tab {i}") for i in range(1, 10)],
-        Binding("0", "tab_0", "Tab 10"),
+        Binding("0", "tab_0", "Tab 0"),
+        # Skills & Config
+        Binding("t", "toggle_skill", "Toggle Skill"),
+        Binding("e", "edit_config", "Edit Config"),
+        Binding("ctrl+s", "save_config", "Save Config"),
+        Binding("escape", "cancel_edit", "Cancel Edit"),
     ]
 
     TITLE = "Hermes Agent HUD"
@@ -516,6 +594,54 @@ class HermesHUDApp(App):
             self.search_mode = not self.search_mode
             self.notify("Type letters then ENTER · ESC to cancel" if self.search_mode else "Search off", timeout=2)
 
+    # Skills & Config actions ────────────────────────────────────────────────
+
+    def action_toggle_skill(self) -> None:
+        """Toggle the currently selected skill in the skills tab."""
+        pane = self.query_one("#skills-pane", SkillsPane)
+        table = pane.query_one(DataTable)
+        row_idx = table.cursor_row
+        if row_idx is None or row_idx < 0:
+            self.notify("No skill selected (use ↑↓ to pick)", severity="warning")
+            return
+        skill_name = table.get_row_at(row_idx)[1]
+        try:
+            result = self.client.toggle_skill(skill_name)
+            new_state = result.get("enabled")
+            if new_state is None:
+                status_cell = table.get_row_at(row_idx)[0]
+                new_state = not status_cell.startswith("[")
+            self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=2)
+            self._do_refresh_skills()
+        except Exception as exc:
+            self.notify(f"Toggle failed: {exc}", severity="error")
+
+    def action_edit_config(self) -> None:
+        """Enter config edit mode."""
+        self.query_one("#config-pane", ConfigPane).edit_mode = True
+        self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3)
+
+    def action_save_config(self) -> None:
+        """Save edited config."""
+        pane = self.query_one("#config-pane", ConfigPane)
+        if not pane.edit_mode:
+            return
+        new_yaml = pane.get_editable_text()
+        try:
+            self.client.update_config_raw(new_yaml)
+            self.notify("Config saved successfully", timeout=2)
+            pane.edit_mode = False
+            self._do_refresh_config()
+        except Exception as exc:
+            self.notify(f"Save failed: {exc}", severity="error")
+
+    def action_cancel_edit(self) -> None:
+        """Exit edit mode without saving."""
+        pane = self.query_one("#config-pane", ConfigPane)
+        pane.edit_mode = False
+        self.notify("Edit cancelled", timeout=1)
+
+
     async def on_key(self, event) -> None:
         if self.search_mode and event.key.isprintable() and len(event.key) == 1:
             self.search_query += event.key
@@ -528,6 +654,8 @@ class HermesHUDApp(App):
         elif self.search_mode and event.key == "escape":
             self.search_mode = False
             self.notify("Search cancelled", timeout=1)
+        elif event.key == "escape" and self.query_one(ConfigPane).edit_mode:
+            self.action_cancel_edit()
 
     def action_tab_1(self): self._set_active("tab_1")
     def action_tab_2(self): self._set_active("tab_2")
