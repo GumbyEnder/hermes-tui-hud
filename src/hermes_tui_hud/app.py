@@ -220,20 +220,25 @@ class ConfigPane(Static):
 
 
     def _watch_edit_mode(self, old: bool, new: bool) -> None:
+        # Guard: don't run until widget is mounted and children exist
+        if not self.is_mounted:
+            return
         disp = self.query_one("#cfg-display", Vertical)
         edit = self.query_one("#cfg-edit", Vertical)
         disp.display = not new
         edit.display = new
         if new:
-            # Enter edit mode — load current config into editor
+            # Enter edit mode — load current config into editor and give it focus
             editor = self.query_one("#cfg-editor", TextArea)
             editor.clear()
             editor.insert(self._last_config_text)
+            editor.focus()
             self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3)
         else:
-            # Exiting edit mode — clear editor
+            # Exiting edit mode — clear editor and return focus to display
             editor = self.query_one("#cfg-editor", TextArea)
             editor.clear()
+            editor.blur()
 
 class SkillsPane(Static):
     def compose(self) -> ComposeResult:
