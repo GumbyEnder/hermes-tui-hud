@@ -553,7 +553,11 @@ class HermesHUDApp(App):
         with TabbedContent(id="tabs"):
             names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env","Commands"]
             for i, name in enumerate(names):
-                tid = f"tab_{i+1}" if i < 9 else "tab_0"
+                # Commands sits beyond the 10-numeric-slot limit; give it a unique non-numeric ID
+                if name == "Commands":
+                    tid = "commands-tab"
+                else:
+                    tid = f"tab_{i+1}" if i < 9 else "tab_0"
                 pid = f"{name.lower()}-pane"
                 with TabPane(name, id=tid):
                     match name:
