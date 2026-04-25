@@ -388,6 +388,26 @@ class EnvPane(Static):
             desc = (e.description or "-")[:45]
             t.add_row(st, e.name[:20], val[:25], desc)
 
+
+class CommandsPane(Static):
+    """Display all keybindings in a sortable table."""
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cmd-container"):
+            yield Label("⌨⟨ KEYBINDINGS ⟩", id="cmd-title")
+            t = DataTable(zebra_stripes=True, id="cmd-table")
+            t.add_columns("Key", "Action", "Description")
+            yield t
+
+    def on_mount(self) -> None:
+        table = self.query_one("#cmd-table", DataTable)
+        table.clear()
+        for binding in self.app.BINDINGS:
+            key = binding.key
+            action = binding.action
+            desc = binding.description or ""
+            table.add_row(key, action, desc)
+
+
 # ─── Main App ────────────────────────────────────────────────────────────
 
 
@@ -485,6 +505,18 @@ class HermesHUDApp(App):
     #cfg-editor {{ height: 1fr; }}
     #cfg-display, #cfg-edit {{ height: 1fr; }}
     .hidden {{ display: none; }}
+
+    #cmd-title {{
+        text-align: center;
+        text-style: bold;
+        margin: 1 0;
+    }}
+    #cmd-container {{
+        height: 1fr;
+    }}
+    #cmd-table {{
+        height: 1fr;
+    }}
     """
 
 
@@ -519,7 +551,7 @@ class HermesHUDApp(App):
     def compose(self) -> ComposeResult:
         yield CyberHeader(id="cyber-header")
         with TabbedContent(id="tabs"):
-            names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env"]
+            names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env","Commands"]
             for i, name in enumerate(names):
                 tid = f"tab_{i+1}" if i < 9 else "tab_0"
                 pid = f"{name.lower()}-pane"
@@ -535,6 +567,7 @@ class HermesHUDApp(App):
                         case "Logs":        yield LogsPane(id=pid)
                         case "Analytics":   yield AnalyticsPane(id=pid)
                         case "Env":         yield EnvPane(id=pid)
+                        case "Commands":   yield CommandsPane(id="commands-pane")
         yield CyberFooter(id="cyber-footer")
 
     def on_mount(self) -> None:
