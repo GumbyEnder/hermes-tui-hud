@@ -2,16 +2,6 @@
 
 Hermes TUI HUD is a terminal-native operator console for Hermes Agent.
 
-It carries the best operational ideas from [`hermes-dashboard-matrix-plus`](https://github.com/GumbyEnder/hermes-dashboard-matrix-plus) into a keyboard-first terminal workflow:
-
-- profile and agent operations
-- session management
-- gateway control and log inspection
-- cron/task control
-- maintenance actions
-- projects and Kanban workflows
-- notes, todos, live memory, and reporting
-
 The design assumption is simple:
 
 - use only what is already native to Hermes Agent and Hermes Web UI
