@@ -236,8 +236,14 @@ class HermesDashboardClient:
             return [Skill.from_api(s) for s in data]
         return []
 
-    def toggle_skill(self, name: str) -> dict[str, Any]:
-        return self.put("/api/skills/toggle", {"name": name})
+    def toggle_skill(self, name: str, enabled: bool) -> dict[str, Any]:
+        """Set a skill's enabled state.
+
+        Args:
+            name: Skill identifier
+            enabled: Target state (True to enable, False to disable)
+        """
+        return self.put("/api/skills/toggle", {"name": name, "enabled": enabled})
 
     # ── Tools ─────────────────────────────────────────────────────────
 

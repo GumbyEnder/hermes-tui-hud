@@ -65,6 +65,19 @@ def _short_rel_time(iso: str | None) -> str:
 
 
 # ─── Colors ─────────────────────────────────────────────────────────────
+# ─── Theme Palettes ─────────────────────────────────────────────────────────
+PALETTES = [
+    # 0 — Neon Night (default cyberpunk)
+    ("#00fff0", "#ff00ff", "#00ff41", "#ff0040", "#0a0a0f", "#12121a"),  # cyan, magenta, green, red, bg, panel
+    # 1 — Vaporwave
+    ("#ff71ce", "#01cdfe", "#05ffa1", "#b967ff", "#1a0b2e", "#2b102e"),
+    # 2 — Matrix
+    ("#00ff00", "#003300", "#008f11", "#00ff41", "#000000", "#001100"),
+    # 3 — Amber CRT
+    ("#ffb000", "#ff6b00", "#ffd000", "#ff4800", "#0f0a00", "#1a1208"),
+]
+
+
 CYAN, MAGENTA, GREEN, RED, BG, PANEL = (
     "#00fff0", "#ff00ff", "#00ff41", "#ff0040", "#0a0a0f", "#12121a"
 )
@@ -294,7 +307,9 @@ class CronPane(Static):
             lr = (j.last_run or "-")[:19]
             ls = j.last_status or "-"
             col = GREEN if (j.last_status or "").lower() == "success" else RED if j.last_status else ""
-            t.add_row(st, j.job_id[:12], j.name[:22], j.schedule[:12], lr, f"[{col}]{ls}[/]" if col else ls)
+            # Use schedule_display (human-friendly) if present, else fallback to raw schedule
+            sched = j.schedule_display[:12] if j.schedule_display else (str(j.schedule)[:12] if j.schedule else "-")
+            t.add_row(st, j.job_id[:12], j.name[:22], sched, lr, f"[{col}]{ls}[/]" if col else ls)
 
 
 class LogsPane(Static):
@@ -369,34 +384,79 @@ class EnvPane(Static):
 # ─── Main App ────────────────────────────────────────────────────────────
 
 class HermesHUDApp(App):
-    CSS = f"""
-    Screen {{ background: {BG}; }}
+    def _build_css(self) -> str:
+        """Generate CSS string from current palette colors."""
+        return f""""
+    Screen {{ background: {BG}; overflow: hidden; }}
+
     #cyber-header {{
-        height: 3; background: {PANEL};
+        dock: top;
+        height: 3;
+        background: {PANEL};
         border: solid {CYAN};
         padding: 0 1; content-align: left middle;
+        z-index: 1;
     }}
     #cyber-header Label {{ color: {CYAN}; text-style: bold; margin-right: 2; }}
 
-    TabbedContent {{ height: 1fr; background: {BG}; }}
-    TabPane {{ background: {PANEL}; padding: 1; }}
+    /* Main content area */
+    #tabs {{
+        height: 1fr;
+        margin-top: 3;
+        margin-bottom: 3;
+        background: {BG};
+    }}
 
+    /* Ensure tab panes and children fill available space */
+    TabPane {{
+        height: 1fr;
+        background: {PANEL};
+        padding: 1;
+    }}
+    TabPane > * {{
+        height: 1fr;
+    }}
+    TabPane > Vertical > DataTable,
+    TabPane > DataTable {{
+        height: 1fr;
+    }}
+    TabPane > ScrollableContainer {{
+        height: 1fr;
+    }}
+    TabPane > Vertical > Label,
+    TabPane > Label {{
+        height: auto;
+    }}
+
+    /* DataTable styling (size controlled via parent) */
     DataTable {{
-        height: auto; background: {PANEL}; color: #e0e0e0;
+        background: {PANEL};
+        color: #e0e0e0;
     }}
     DataTable > .datatable--cursor {{ background: {CYAN}; color: black; }}
     DataTable > .datatable--fixed {{ background: {PANEL}; }}
     DataTable > .datatable--fixed-cursor {{ background: {CYAN}; color: black; }}
 
-    Footer {{ height: 3; background: {PANEL}; color: {CYAN}; content-align: center middle; }}
+    Footer {{
+        dock: bottom;
+        height: 3;
+        background: {PANEL};
+        color: {CYAN};
+        content-align: center middle;
+        z-index: 1;
+    }}
 
+    /* Misc */
     #sm, #sn {{ color: #888; }}
     #lh {{ margin-bottom: 1; color: #666; }}
     #lv {{ height: 1fr; background: {PANEL}; color: #e0e0e0; }}
     #cl {{ height: 1fr; background: {PANEL}; color: #d0d0d0; }}
     #totals {{ color: {GREEN}; text-style: bold; margin-bottom: 1; }}
+    #cfg-editor {{ height: 1fr; }}
     .hidden {{ display: none; }}
     """
+
+
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
@@ -407,8 +467,9 @@ class HermesHUDApp(App):
         # Skills & Config
         Binding("t", "toggle_skill", "Toggle Skill"),
         Binding("e", "edit_config", "Edit Config"),
-        Binding("ctrl+s", "save_config", "Save Config"),
+        Binding("ctrl+s", "save_config", "Save Config", priority=True),
         Binding("escape", "cancel_edit", "Cancel Edit"),
+        Binding("ctrl+p", "cycle_palette", "Cycle Palette"),
     ]
 
     TITLE = "Hermes Agent HUD"
@@ -416,6 +477,7 @@ class HermesHUDApp(App):
 
     def __init__(self, client: HermesDashboardClient) -> None:
         super().__init__()
+        self.current_palette = 0
         self.client = client
         self._clock_timer = None
         self.search_mode = False
@@ -610,16 +672,20 @@ class HermesHUDApp(App):
             self.notify("No skill selected (use ↑↓ to pick)", severity="warning")
             return
         skill_name = table.get_row_at(row_idx)[1]
+        status_cell = table.get_row_at(row_idx)[0]
+        # Determine current state from cell: "[green]ON[/]" or "[red]OFF[/]" or unknown
+        currently_on = status_cell.startswith("[green]")
+        desired_state = not currently_on
         try:
-            result = self.client.toggle_skill(skill_name)
-            new_state = result.get("enabled")
-            if new_state is None:
-                status_cell = table.get_row_at(row_idx)[0]
-                new_state = not status_cell.startswith("[")
-            self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=2)
+            result = self.client.toggle_skill(skill_name, enabled=desired_state)
+            # Server echoes back the new state
+            new_state = result.get("enabled", desired_state)
+            self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=3)
             self._do_refresh_skills()
         except Exception as exc:
-            self.notify(f"Toggle failed: {exc}", severity="error")
+            msg = str(exc)
+            hint = f" ({exc.args[0][:60]})" if hasattr(exc, 'args') and exc.args else ""
+            self.notify(f"Toggle failed: {msg}{hint}", severity="error", timeout=5)
 
     def action_edit_config(self) -> None:
         """Enter config edit mode."""
@@ -661,6 +727,17 @@ class HermesHUDApp(App):
             self.notify("Search cancelled", timeout=1)
         elif event.key == "escape" and self.query_one(ConfigPane).edit_mode:
             self.action_cancel_edit()
+
+
+    def action_cycle_palette(self) -> None:
+        """Cycle to next cyberpunk palette."""
+        global CYAN, MAGENTA, GREEN, RED, BG, PANEL
+        self.current_palette = (self.current_palette + 1) % len(PALETTES)
+        CYAN, MAGENTA, GREEN, RED, BG, PANEL = PALETTES[self.current_palette]
+        # Rebuild CSS with new colors
+        self.CSS = self._build_css()
+        self.refresh_css()
+        self.notify(f"Palette {self.current_palette + 1}/{len(PALETTES)}", timeout=1.5)
 
     def action_tab_1(self): self._set_active("tab_1")
     def action_tab_2(self): self._set_active("tab_2")

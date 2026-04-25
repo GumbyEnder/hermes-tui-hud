@@ -122,10 +122,22 @@ class CronJob:
     last_status: Optional[str] = None
     last_error: Optional[str] = None
     next_run: Optional[str] = None
+    schedule_display: str = ""
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> CronJob:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        # Map API keys to dataclass field names
+        field_map = {
+            "id": "job_id",
+            "last_run_at": "last_run",
+            "next_run_at": "next_run",
+        }
+        mapped = {}
+        for k, v in data.items():
+            field_name = field_map.get(k, k)
+            if field_name in cls.__dataclass_fields__:
+                mapped[field_name] = v
+        return cls(**mapped)
 
 
 @dataclass
