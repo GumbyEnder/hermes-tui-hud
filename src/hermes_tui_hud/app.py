@@ -24,6 +24,7 @@ from textual.widgets import (
     TabPane,
     TextArea,
 )
+from textual.widget import NoMatches
 
 from .client.api import HermesDashboardClient
 from .client.models import (
@@ -75,8 +76,11 @@ PALETTES = [
     ("#00ff00", "#003300", "#008f11", "#00ff41", "#000000", "#001100"),
     # 3 — Amber CRT
     ("#ffb000", "#ff6b00", "#ffd000", "#ff4800", "#0f0a00", "#1a1208"),
+    # 4 — ICE ICE BABY
+    ("#00e5ff", "#00ffea", "#ffffff", "#00aaff", "#050a1a", "#0a1525"),
 ]
 
+PALETTE_NAMES = ["Neon Night", "Vaporwave", "Matrix", "Amber CRT", "ICE ICE BABY"]
 
 CYAN, MAGENTA, GREEN, RED, BG, PANEL = (
     "#00fff0", "#ff00ff", "#00ff41", "#ff0040", "#0a0a0f", "#12121a"
@@ -255,9 +259,10 @@ class ConfigPane(Static):
 
 class SkillsPane(Static):
     def compose(self) -> ComposeResult:
-        t = DataTable(zebra_stripes=True, cursor_type="row")
-        t.add_columns("Status", "Name", "Description")
-        yield t
+        with Vertical():
+            t = DataTable(zebra_stripes=True, cursor_type="row")
+            t.add_columns("Status", "Name", "Description")
+            yield t
 
     def update_skills(self, skills: list[Skill]) -> None:
         t = self.query_one(DataTable)
@@ -273,9 +278,10 @@ class SkillsPane(Static):
 
 class ToolsPane(Static):
     def compose(self) -> ComposeResult:
-        t = DataTable(zebra_stripes=True)
-        t.add_columns("Status", "Toolset", "Enabled", "Configured", "Tools")
-        yield t
+        with Vertical():
+            t = DataTable(zebra_stripes=True)
+            t.add_columns("Status", "Toolset", "Enabled", "Configured", "Tools")
+            yield t
 
     def update_tools(self, toolsets: list[Toolset]) -> None:
         t = self.query_one(DataTable)
@@ -295,9 +301,10 @@ class ToolsPane(Static):
 
 class CronPane(Static):
     def compose(self) -> ComposeResult:
-        t = DataTable(zebra_stripes=True)
-        t.add_columns("Status", "JobID", "Name", "Schedule", "Last Run", "Status")
-        yield t
+        with Vertical():
+            t = DataTable(zebra_stripes=True)
+            t.add_columns("Status", "JobID", "Name", "Schedule", "Last Run", "Status")
+            yield t
 
     def update_cron(self, jobs: list[CronJob]) -> None:
         t = self.query_one(DataTable)
@@ -367,9 +374,10 @@ class AnalyticsPane(Static):
 
 class EnvPane(Static):
     def compose(self) -> ComposeResult:
-        t = DataTable(zebra_stripes=True)
-        t.add_columns("Status", "Name", "Value", "Description")
-        yield t
+        with Vertical():
+            t = DataTable(zebra_stripes=True)
+            t.add_columns("Status", "Name", "Value", "Description")
+            yield t
 
     def update_env(self, envs: list[EnvVar]) -> None:
         t = self.query_one(DataTable)
@@ -380,8 +388,25 @@ class EnvPane(Static):
             desc = (e.description or "-")[:45]
             t.add_row(st, e.name[:20], val[:25], desc)
 
-
 # ─── Main App ────────────────────────────────────────────────────────────
+
+
+class CyberFooter(Footer):
+    """Footer that displays current palette name alongside key hints."""
+    palette_name: reactive[str] = reactive("")
+
+    def compose(self) -> ComposeResult:
+        # Palette label on the left
+        yield Label(f"PALETTE: {self.palette_name}", id="palette-label")
+        # Include Footer's default key hints
+        yield from super().compose()
+
+    def watch_palette_name(self, name: str) -> None:
+        try:
+            self.query_one("#palette-label", Label).update(f"PALETTE: {name}")
+        except NoMatches:
+            pass  # Label not yet mounted; compose will set initial text
+
 
 class HermesHUDApp(App):
     def _build_css(self) -> str:
@@ -442,8 +467,13 @@ class HermesHUDApp(App):
         height: 3;
         background: {PANEL};
         color: {CYAN};
-        content-align: center middle;
         z-index: 1;
+    }}
+    #palette-label {{
+        color: {CYAN};
+        text-style: bold;
+        dock: left;
+        padding: 0 1;
     }}
 
     /* Misc */
@@ -504,12 +534,17 @@ class HermesHUDApp(App):
                         case "Logs":        yield LogsPane(id=pid)
                         case "Analytics":   yield AnalyticsPane(id=pid)
                         case "Env":         yield EnvPane(id=pid)
-        yield Footer()
+        yield CyberFooter(id="cyber-footer")
 
     def on_mount(self) -> None:
         self._clock_timer = self.set_interval(1.0, self._tick)
         self.set_interval(30.0, self._auto_refresh)
         self._load_all()
+        # Set initial palette name in footer
+        try:
+            self.query_one(CyberFooter).palette_name = PALETTE_NAMES[self.current_palette]
+        except Exception:
+            pass  # footer not mounted yet
 
     def on_unmount(self) -> None:
         if self._clock_timer:
@@ -734,10 +769,15 @@ class HermesHUDApp(App):
         global CYAN, MAGENTA, GREEN, RED, BG, PANEL
         self.current_palette = (self.current_palette + 1) % len(PALETTES)
         CYAN, MAGENTA, GREEN, RED, BG, PANEL = PALETTES[self.current_palette]
+        # Update footer palette name
+        try:
+            self.query_one(CyberFooter).palette_name = PALETTE_NAMES[self.current_palette]
+        except Exception:
+            pass  # footer not mounted yet
         # Rebuild CSS with new colors
         self.CSS = self._build_css()
         self.refresh_css()
-        self.notify(f"Palette {self.current_palette + 1}/{len(PALETTES)}", timeout=1.5)
+        self.notify(f"Palette: {PALETTE_NAMES[self.current_palette]}", timeout=1.5)
 
     def action_tab_1(self): self._set_active("tab_1")
     def action_tab_2(self): self._set_active("tab_2")
