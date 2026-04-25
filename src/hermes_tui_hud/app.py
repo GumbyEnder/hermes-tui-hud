@@ -250,7 +250,7 @@ class ConfigPane(Static):
             editor.clear()
             editor.insert(self._last_config_text)
             editor.focus()
-            self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3)
+            self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3, anchor="bottom")
         else:
             # Exiting edit mode — clear editor and return focus to display
             editor = self.query_one("#cfg-editor", TextArea)
@@ -483,6 +483,7 @@ class HermesHUDApp(App):
     #cl {{ height: 1fr; background: {PANEL}; color: #d0d0d0; }}
     #totals {{ color: {GREEN}; text-style: bold; margin-bottom: 1; }}
     #cfg-editor {{ height: 1fr; }}
+    #cfg-display, #cfg-edit {{ height: 1fr; }}
     .hidden {{ display: none; }}
     """
 
@@ -499,7 +500,7 @@ class HermesHUDApp(App):
         Binding("e", "edit_config", "Edit Config"),
         Binding("ctrl+s", "save_config", "Save Config", priority=True),
         Binding("escape", "cancel_edit", "Cancel Edit"),
-        Binding("ctrl+p", "cycle_palette", "Cycle Palette"),
+        Binding("ctrl+p", "cycle_palette", "Cycle Palette", priority=True),
     ]
 
     TITLE = "Hermes Agent HUD"
@@ -716,6 +717,12 @@ class HermesHUDApp(App):
             # Server echoes back the new state
             new_state = result.get("enabled", desired_state)
             self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=3)
+            # Update cell directly for immediate feedback
+            try:
+                new_label = "[green]ON[/]" if new_state else "[red]OFF[/]"
+                table.update_cell(row_idx, 0, new_label)
+            except Exception:
+                pass  # ignore UI update errors; background refresh will recover
             self._do_refresh_skills()
         except Exception as exc:
             msg = str(exc)
@@ -735,8 +742,11 @@ class HermesHUDApp(App):
         new_yaml = pane.get_editable_text()
         try:
             self.client.update_config_raw(new_yaml)
-            self.notify("Config saved successfully", timeout=2)
+            self.notify("Config saved successfully", timeout=2, anchor="bottom")
+            # Update display immediately with new config text
+            pane.update_config(new_yaml)
             pane.edit_mode = False
+            # Also refresh in background to ensure consistency
             self._do_refresh_config()
         except Exception as exc:
             self.notify(f"Save failed: {exc}", severity="error")
