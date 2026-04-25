@@ -53,6 +53,28 @@ Themes: Neon Night (default), Vaporwave, Matrix, Amber CRT, Phosphor Blue. Effec
 
 There is also a CLI entrypoint for direct command use.
 
+## Screenshots
+
+<div class="screenshot-gallery">
+
+**Skills tab — toggle agent skills inline (Tokyo neon theme)**
+
+<img src="docs/images/tui-hud-tokyo-skills.png" alt="Hermes TUI HUD — Skills tab showing skill toggles" width="750"/>
+
+**Sessions tab — inspect and manage active Hermes sessions**
+
+<img src="docs/images/tui-hud-sessions.png" alt="Hermes TUI HUD — Sessions tab with search and session list" width="750"/>
+
+**Logs tab — live color-coded gateway and agent logs**
+
+<img src="docs/images/tui-hud-logs.png" alt="Hermes TUI HUD — Logs tab streaming live output" width="750"/>
+
+**Command palette — quick action access**
+
+<img src="docs/images/tui-hud-commands.png" alt="Hermes TUI HUD — Command palette with available actions" width="750"/>
+
+</div>
+
 ## Architecture
 
 Hermes TUI HUD intentionally stays close to Hermes-native behavior.
