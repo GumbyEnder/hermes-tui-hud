@@ -34,77 +34,22 @@ This is not a toy terminal wrapper around the web app. The intent is a serious o
 
 ## Current Capabilities
 
-The current build includes:
+Full-screen Textual HUD with ten operator-focused tabs:
 
-- full-screen Textual HUD shell
-- HERO launch splash with `HERMES HERO` branding
-- dual layout modes
-  - `wide` with stacked nav on the left
-  - `stacked` / portrait with horizontal top-nav
-- overview pane with live Hermes status
-- interactive Agents pane
-  - select profile
-  - switch active profile
-  - preview `SOUL.md`
-  - preview `config.yaml`
-  - scope gateway actions to the selected profile
-- interactive Sessions pane
-  - select session
-  - real Hermes session search
-  - export session JSON
-  - rename
-  - pin / unpin
-  - archive / unarchive
-  - clear
-  - delete
-- Gateway pane
-  - status
-  - logs
-  - start / stop / restart
-- Cron pane
-  - list
-  - create
-  - run
-  - pause / resume
-  - delete
-- Projects pane
-  - select project
-  - view matching briefs
-  - edit a matched brief when Hermes exposes it as a text file
-  - browse the selected project path
-  - step through files and directories in-TUI
-  - add and move Kanban cards
-- Notes / Todos pane
-  - add todo
-  - edit Hermes notes
-- Memory pane
-  - inspect live memory
-  - edit `MEMORY.md`
-  - preview `USER.md`
-- Reports pane
-  - inspect live reporting summaries from Hermes-native endpoints
-  - keep ops reporting separate from memory once the pane gets crowded
-- Token Spend pane
-  - time-windowed spend view
-  - terminal-native spend history graph
-  - profile/provider spend breakdowns
-- Maintenance pane
-  - lazy-loaded update checks
-  - apply update commands
-  - cleanup stale sessions
-  - cleanup zero-message sessions
-- theme cycling
-  - Matrix
-  - Amber CRT
-  - Phosphor Blue CRT
-  - Vault-Tec
-  - Mother
-  - Netrunner
-  - Neonwave
-- effect cycling
-  - Full FX
-  - Minimal
-  - Low Noise Ops
+- **HERO launch splash** with `HERMES HERO` branding
+- **Dual layout modes** — `wide` (stacked left nav) and `stacked`/portrait (horizontal top-nav)
+- **Status** — live Hermes gateway health, version, platform states
+- **Sessions** — search, export JSON, rename, pin, archive, clear, delete
+- **Model** — current model, provider, context limits, capabilities
+- **Config** — inline YAML editor (view/edit with `e`, `Ctrl+S` to save)
+- **Skills** — list skills; toggle enable/disable inline with `t`
+- **Tools** — toolset registry and configuration status
+- **Cron** — list, view schedule, last run; run/pause/delete planned
+- **Logs** — live agent and gateway logs with color-coded levels
+- **Analytics** — token spend by model, day-by-day usage
+- **Env** — environment variables visible to Hermes (SET/unset, descriptions)
+
+Themes: Neon Night (default), Vaporwave, Matrix, Amber CRT, Phosphor Blue. Effect modes: Full FX, Minimal, Low Noise Ops.
 
 There is also a CLI entrypoint for direct command use.
 
@@ -191,16 +136,14 @@ hermes-hud tui
 
 In portrait / stacked mode, the top navigation is also clickable with the mouse.
 
-## Recent Updates
+## Recent Updates (v0.3.4-dev)
 
-- added token and estimated-cost visibility to Sessions and Reports
-- added a dedicated `Token Spend` pane with time-window filters and terminal charts
-- added persisted `wide` and `stacked` layouts
-- portrait mode now uses a horizontal top-nav instead of a left-side list
-- added clickable top-nav buttons and `Left` / `Right` section navigation
-- replaced generic splash/title language with `HERMES HERO`
-- added deeper skin support with `Vault-Tec`, `Mother`, `Netrunner`, and `Neonwave`
-- added effect modes so the HUD can run cinematic or flatter with `Low Noise Ops`
+- Fixed Cron tab — API schema changes mapped correctly; all jobs now display
+- Fixed layout — header and tabs stay pinned during refreshes
+- Fixed config save — `Ctrl+S` priority binding ensures saves fire
+- Fixed skill toggle — proper `enabled` payload sent to API
+- Fixed palette cycling — no more crashes on `Ctrl+P`
+- Added `schedule_display` field for human-readable cron schedules
 
 ## Native Hermes Philosophy
 
