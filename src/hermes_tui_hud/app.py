@@ -346,18 +346,19 @@ class HermesHUDApp(App):
             names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env"]
             for i, name in enumerate(names):
                 tid = f"tab_{i+1}" if i < 9 else "tab_0"
+                pid = f"{name.lower()}-pane"
                 with TabPane(name, id=tid):
                     match name:
-                        case "Status":      yield StatusPane()
-                        case "Sessions":    yield SessionsPane()
-                        case "Model":       yield ModelPane()
-                        case "Config":      yield ConfigPane()
-                        case "Skills":      yield SkillsPane()
-                        case "Tools":       yield ToolsPane()
-                        case "Cron":        yield CronPane()
-                        case "Logs":        yield LogsPane()
-                        case "Analytics":   yield AnalyticsPane()
-                        case "Env":         yield EnvPane()
+                        case "Status":      yield StatusPane(id=pid)
+                        case "Sessions":    yield SessionsPane(id=pid)
+                        case "Model":       yield ModelPane(id=pid)
+                        case "Config":      yield ConfigPane(id=pid)
+                        case "Skills":      yield SkillsPane(id=pid)
+                        case "Tools":       yield ToolsPane(id=pid)
+                        case "Cron":        yield CronPane(id=pid)
+                        case "Logs":        yield LogsPane(id=pid)
+                        case "Analytics":   yield AnalyticsPane(id=pid)
+                        case "Env":         yield EnvPane(id=pid)
         yield Footer()
 
     def on_mount(self) -> None:
