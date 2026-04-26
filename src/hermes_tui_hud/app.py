@@ -736,7 +736,11 @@ class HermesHUDApp(App):
             self._clock_timer.stop()
 
     def _tick(self) -> None:
-        self.query_one(CyberHeader).clock = datetime.now().strftime("%H:%M:%S")
+        try:
+            self.query_one(CyberHeader).clock = datetime.now().strftime("%H:%M:%S")
+        except Exception:
+            # Widget may not be mounted yet or already unmounted; ignore
+            pass
 
     def _auto_refresh(self) -> None:
         self._load_status_sessions()
