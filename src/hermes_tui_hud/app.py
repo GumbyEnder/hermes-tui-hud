@@ -182,6 +182,35 @@ class CyberHeader(Static):
             pass
 
 
+class HomePane(Static):
+    """HERMES home / splash screen — ASCII art, status snapshot, quick links."""
+
+    def compose(self) -> ComposeResult:
+        with Panel("⌨ HERMES HUD – Home", color=PANE_COLORS["status"]):
+            yield Static(id="home-ascii")
+
+    def on_mount(self) -> None:
+        art = """[bold cyan]    .-----..-.         .-..-..-..-..-..-..-..-..-..-..-..-..-
+    |.-.-.|\\            | { } { } { } { } { } { } { } { } { }
+    |'-'-'|-.  .--.  .-|-. .-. .-. .-. .-. .-. .-. .-. .-. .-.
+    .'   `-'  |  |  |  | | | | | | | | | | | | | | | | | | |
+   .-.  .-.   '  `--'  `-' `-' `-' `-' `-' `-' `-' `-' `-'
+   |  ||  |
+   |  ||  |  [bold magenta]HERMES[/]  [dim]Project Manager[/]
+   '--'--'  
+[/]"""
+        self.query_one("#home-ascii", Static).update(art)
+
+        info = (
+            "\n[bold]GitHub:[/]   [link=https://github.com/GumbyEnder/hermes-tui-hud]github.com/GumbyEnder/hermes-tui-hud[/link]\n"
+            "[bold]Profile:[/]  Frodo — Hermes Project Manager\n"
+            "[bold]Palette:[/]  CodeBurn-inspired cyberpunk\n"
+            "[bold]Keys:[/]     q=Quit  r=Refresh  /=Search  1-9/0=Tabs\n"
+        )
+        self.query_one("#home-ascii", Static).update(art + info)
+
+
+
 class StatusPane(Static):
     def compose(self) -> ComposeResult:
         with Panel("Status", color=PANE_COLORS["status"]):
@@ -697,8 +726,8 @@ class HermesHUDApp(App):
 
     def compose(self) -> ComposeResult:
         yield CyberHeader(id="cyber-header")
-        with TabbedContent(id="tabs"):
-            names = ["Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env","Commands"]
+        with TabbedContent(id="tabs", initial="Home"):
+            names = ["Home","Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env","Commands"]
             for i, name in enumerate(names):
                 # Commands sits beyond the 10-numeric-slot limit; give it a unique non-numeric ID
                 if name == "Commands":
@@ -708,6 +737,7 @@ class HermesHUDApp(App):
                 pid = f"{name.lower()}-pane"
                 with TabPane(name, id=tid):
                     match name:
+                        case "Home":        yield HomePane(id=pid)
                         case "Status":      yield StatusPane(id=pid)
                         case "Sessions":    yield SessionsPane(id=pid)
                         case "Model":       yield ModelPane(id=pid)
