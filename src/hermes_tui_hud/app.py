@@ -547,9 +547,8 @@ class LogsPane(Static):
 
     def compose(self) -> ComposeResult:
         with Panel("Logs", color=PANE_COLORS["logs"]):
-            with Vertical():
-                yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
-                yield Markdown(id="lv")
+            with ScrollView(id="logs-scroll"):
+                yield Static("", id="lv", markup=True)
 
     def append_log_line(self, line: str) -> None:
         # Apply log level coloring
@@ -566,13 +565,13 @@ class LogsPane(Static):
         # Render kanban wiki links to markdown chips
         styled = self.app.render_kanban_links(styled)
         self._lines.append(styled)
-        md = self.query_one("#lv", Markdown)
-        md.update("\n".join(self._lines))
-        md.scroll_end()
+        static = self.query_one("#lv", Static)
+        static.update("\n".join(self._lines))
+        self.query_one("#logs-scroll").scroll_end()
 
     def clear_logs(self) -> None:
         self._lines = []
-        self.query_one("#lv", Markdown).update("")
+        self.query_one("#lv", Static).update("")
 
 
 class AnalyticsPane(Static):
