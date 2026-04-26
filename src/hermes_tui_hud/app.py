@@ -155,7 +155,7 @@ class CyberHeader(Static):
     session_count = reactive(0)
     model = reactive("")
     clock = reactive("")
-
+    
     def compose(self) -> ComposeResult:
         with Horizontal(id="cyber-header"):
             yield Label("", id="v")
@@ -606,6 +606,78 @@ class CyberFooter(Footer):
 
 
 class HermesHUDApp(App):
+    CSS = """
+Screen { background: var(--bg); overflow: hidden; }
+
+#cyber-header {
+    dock: top;
+    height: 3;
+    background: var(--panel);
+    border: solid var(--cyan);
+    padding: 0 1; content-align: left middle;
+    z-index: 1;
+}
+#cyber-header Label { color: var(--cyan); text-style: bold; margin-right: 2; }
+
+#tabs {
+    height: 1fr;
+    margin-top: 3;
+    margin-bottom: 3;
+    background: var(--bg);
+}
+
+TabPane {
+    height: 1fr;
+    background: var(--panel);
+    padding: 1;
+}
+TabPane > * { height: 1fr; }
+TabPane > Vertical > DataTable,
+TabPane > DataTable { height: 1fr; }
+TabPane > ScrollableContainer { height: 1fr; }
+TabPane > Vertical > Label,
+TabPane > Label { height: auto; }
+
+DataTable {
+    background: var(--panel);
+    color: #e0e0e0;
+}
+DataTable > .datatable--cursor { background: var(--cyan); color: black; }
+DataTable > .datatable--fixed { background: var(--panel); }
+DataTable > .datatable--fixed-cursor { background: var(--cyan); color: black; }
+
+Footer {
+    dock: bottom;
+    height: 3;
+    background: var(--panel);
+    color: var(--cyan);
+    z-index: 1;
+}
+#palette-label {
+    color: var(--cyan);
+    text-style: bold;
+    dock: left;
+    padding: 0 1;
+}
+
+#sm, #sn { color: #888; }
+#lh { margin-bottom: 1; color: #666; }
+#lv { height: 1fr; background: var(--panel); color: #e0e0e0; }
+#cl { height: 1fr; background: var(--panel); color: #d0d0d0; }
+#totals { color: var(--green); text-style: bold; margin-bottom: 1; }
+#cfg-editor { height: 1fr; }
+#cfg-display, #cfg-edit { height: 1fr; }
+.hidden { display: none; }
+
+#cmd-title {
+    text-align: center;
+    text-style: bold;
+    margin: 1 0;
+}
+#cmd-container { height: 1fr; }
+#cmd-table { height: 1fr; }
+"""
+
     def _build_css(self) -> str:
         """Generate CSS string from current palette colors."""
         return f""""
@@ -723,6 +795,18 @@ class HermesHUDApp(App):
         self.search_query = ""
         self.sessions_offset = 0
         self.sessions_limit = 30
+    def get_css_variables(self) -> dict:
+        """Return CSS custom property values for current palette."""
+        variables = super().get_css_variables()
+        variables.update({
+            "--cyan": CYAN,
+            "--magenta": MAGENTA,
+            "--green": GREEN,
+            "--red": RED,
+            "--bg": BG,
+            "--panel": PANEL,
+        })
+        return variables
 
     def compose(self) -> ComposeResult:
         yield CyberHeader(id="cyber-header")
@@ -974,7 +1058,7 @@ class HermesHUDApp(App):
         except Exception:
             pass  # footer not mounted yet
         # Rebuild CSS with new colors
-        self.CSS = self._build_css()
+
         self.refresh_css()
         self.notify(f"Palette: {PALETTE_NAMES[self.current_palette]}", timeout=1.5)
 
