@@ -859,12 +859,12 @@ Footer {
         """Return CSS custom property values for current palette."""
         variables = super().get_css_variables()
         variables.update({
-            "$cyan": CYAN,
-            "$magenta": MAGENTA,
-            "$green": GREEN,
-            "$red": RED,
-            "$bg": BG,
-            "$panel": PANEL,
+            "cyan": CYAN,
+            "magenta": MAGENTA,
+            "green": GREEN,
+            "red": RED,
+            "bg": BG,
+            "panel": PANEL,
         })
         return variables
 
