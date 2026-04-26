@@ -398,7 +398,7 @@ class ConfigPane(Static):
             editor.clear()
             editor.insert(self._last_config_text)
             editor.focus()
-            self.app.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3, anchor="bottom")
+            self.notify("Editing config – Ctrl+S to save, Esc to cancel", timeout=3)
         else:
             # Exiting edit mode — clear editor and return focus to display
             editor = self.query_one("#cfg-editor", TextArea)
@@ -1168,7 +1168,7 @@ Footer {
         new_yaml = pane.get_editable_text()
         try:
             self.client.update_config_raw(new_yaml)
-            self.app.notify("Config saved successfully", timeout=2, anchor="bottom")
+            self.notify("Config saved successfully", timeout=2)
             # Update display immediately with new config text
             pane.update_config(new_yaml)
             pane.edit_mode = False
