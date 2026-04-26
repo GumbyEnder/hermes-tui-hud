@@ -301,7 +301,7 @@ class SessionsPane(Static):
             out_vel = _vel(s.output_tokens, secs)
 
             t.add_row(
-                s.session_id[:12], s.model[:22], s.platform[:8],
+                s.session_id[:12], s.model[:22], s.platform,
                 f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}",
                 in_vel, out_vel,
                 f"{cost:>9}",
