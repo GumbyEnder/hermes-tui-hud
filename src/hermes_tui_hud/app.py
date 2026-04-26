@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import errno
 from datetime import datetime, timezone
+import subprocess
+import urllib.parse
 
 from textual.reactive import reactive
 from textual import on, work
@@ -19,6 +21,7 @@ from textual.widgets import (
     Footer,
     Header,
     Label,
+    Markdown,
     RichLog,
     Static,
     TabbedContent,
@@ -34,6 +37,7 @@ from .client.models import (
 )
 
 from .widgets import Panel
+from .kanban import KanbanCache, render_kanban_links as _render_kanban_links
 
 def _short_rel_time(iso: str | None) -> str:
     """Return compact relative time: 30s / 5m / 2h / 3D / 1W."""
@@ -267,29 +271,27 @@ class SessionsPane(Static):
                 else:
                     return f"{tps:.1f}"
 
-            # Determine session duration in seconds (aware datetime handling)
+            # Determine session duration in seconds (handle float timestamps and ISO strings)
             try:
-                def parse_iso(iso_str: str | None) -> datetime | None:
-                    if not iso_str:
+                def to_datetime(ts: float | str | None) -> datetime | None:
+                    if ts is None:
                         return None
-                    normalized = iso_str.replace("Z", "+00:00") if iso_str.endswith("Z") else iso_str
-                    return datetime.fromisoformat(normalized)
-                started = parse_iso(s.started_at)
+                    if isinstance(ts, (int, float)):
+                        return datetime.fromtimestamp(ts, tz=timezone.utc)
+                    if isinstance(ts, str):
+                        normalized = ts.replace("Z", "+00:00") if ts.endswith("Z") else ts
+                        dt = datetime.fromisoformat(normalized)
+                        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                    return None
+
+                started = to_datetime(s.started_at)
                 if not started:
                     secs = 0
                 else:
-                    # Ensure started is aware (UTC if naive)
-                    if started.tzinfo is None:
-                        started = started.replace(tzinfo=timezone.utc)
-                    # Determine end timestamp
                     if s.ended_at:
-                        ended = parse_iso(s.ended_at)
-                        if ended and ended.tzinfo is None:
-                            ended = ended.replace(tzinfo=timezone.utc)
+                        ended = to_datetime(s.ended_at)
                     elif s.last_active:
-                        ended = parse_iso(s.last_active)
-                        if ended and ended.tzinfo is None:
-                            ended = ended.replace(tzinfo=timezone.utc)
+                        ended = to_datetime(s.last_active)
                     else:
                         ended = None
                     end = ended if ended else datetime.now(timezone.utc)
@@ -539,27 +541,38 @@ class CronPane(Static):
             self.notify(f"Cron toggle failed: {msg}{hint}", severity="error", timeout=5)
 
 class LogsPane(Static):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._lines: list[str] = []
+
     def compose(self) -> ComposeResult:
         with Panel("Logs", color=PANE_COLORS["logs"]):
             with Vertical():
                 yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
-                yield RichLog(id="lv", wrap=True, markup=True, highlight=True)
+                yield Markdown(id="lv", code=False)
 
     def append_log_line(self, line: str) -> None:
-        log = self.query_one("#lv", RichLog)
+        # Apply log level coloring
         if "ERROR" in line or "FATAL" in line:
-            log.write(f"[red]{line}[/]")
+            styled = f"[red]{line}[/]"
         elif "WARN" in line:
-            log.write(f"[yellow]{line}[/]")
+            styled = f"[yellow]{line}[/]"
         elif "INFO" in line:
-            log.write(f"[cyan]{line}[/]")
+            styled = f"[cyan]{line}[/]"
         elif "DEBUG" in line:
-            log.write(f"[green dim]{line}[/]")
+            styled = f"[green dim]{line}[/]"
         else:
-            log.write(line)
+            styled = line
+        # Render kanban wiki links to markdown chips
+        styled = self.app.render_kanban_links(styled)
+        self._lines.append(styled)
+        md = self.query_one("#lv", Markdown)
+        md.update("\n".join(self._lines))
+        md.scroll_end()
 
     def clear_logs(self) -> None:
-        self.query_one("#lv", RichLog).clear()
+        self._lines = []
+        self.query_one("#lv", Markdown).update("")
 
 
 class AnalyticsPane(Static):
@@ -661,17 +674,11 @@ class CyberFooter(Footer):
 class HermesHUDApp(App):
     enable_mouse = False  # Disable mouse tracking to avoid ConPTY EIO crash on exit
 
-    CSS = """
-/* Palette variables — overridden via get_css_variables() */
-$cyan: #00ffff;
-$magenta: #ff00ff;
-$green: #00ff00;
-$red: #ff0000;
-$bg: #000000;
-$panel: #111111;
-
-
+    CSS = """\
+/* Palette variables are provided dynamically via get_css_variables() */
 Screen { background: $bg; overflow: hidden; }
+
+
 
 #cyber-header {
     dock: top;
@@ -854,7 +861,8 @@ Footer {
         self.search_mode = False
         self.search_query = ""
         self.sessions_offset = 0
-        self.sessions_limit = 30
+        self.sessions_limit = 100
+        self.kanban_cache = KanbanCache()
     def get_css_variables(self) -> dict:
         """Return CSS custom property values for current palette."""
         variables = super().get_css_variables()
@@ -903,6 +911,7 @@ Footer {
     def on_mount(self) -> None:
         self._clock_timer = self.set_interval(1.0, self._tick)
         self.set_interval(30.0, self._auto_refresh)
+        self.set_interval(300.0, self._refresh_kanban)  # every 5 minutes
         self._load_all()
         # Set initial palette name in footer
         try:
@@ -927,6 +936,14 @@ Footer {
     def action_refresh(self) -> None:
         self._load_all()
 
+
+    def render_kanban_links(self, text: str) -> str:
+        """Render [[kanban:Board:Card]] patterns as markdown status chips."""
+        return _render_kanban_links(text, self.kanban_cache)
+
+    def _refresh_kanban(self) -> None:
+        """Reload all kanban board files from disk."""
+        self.kanban_cache.refresh_all()
     @work(exclusive=True, thread=True)
     def _load_all(self) -> None:
         self._do_refresh_status()
@@ -1148,6 +1165,24 @@ Footer {
             self._load_status_sessions()
         elif tid == "tab_8":
             self._do_refresh_logs()
+
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """Handle clicks on kanban-open:// links embedded in log lines."""
+        href = event.href
+        if not href.startswith("kanban-open://"):
+            return
+        try:
+            rest = href[len("kanban-open://"):]
+            board_encoded, card_id = rest.split("/", 1)
+            board = urllib.parse.unquote(board_encoded)
+            vault_path = self.kanban_cache.vault_root / "Kanban" / f"{board}.md"
+            if vault_path.exists():
+                subprocess.Popen(["hermes", "open", str(vault_path)])
+                self.notify(f"Opening {board} – {card_id}", timeout=2)
+            else:
+                self.notify(f"Board file not found: {board}", severity="warning", timeout=3)
+        except Exception as e:
+            self.notify(f"Error: {e}", severity="error", timeout=3)
 
 
 def run_app(args) -> None:
