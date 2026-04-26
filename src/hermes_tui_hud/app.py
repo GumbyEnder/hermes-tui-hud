@@ -267,7 +267,7 @@ class SessionsPane(Static):
                 else:
                     return f"{tps:.1f}"
 
-            # Determine session duration in seconds
+            # Determine session duration in seconds (aware datetime handling)
             try:
                 def parse_iso(iso_str: str | None) -> datetime | None:
                     if not iso_str:
@@ -275,16 +275,25 @@ class SessionsPane(Static):
                     normalized = iso_str.replace("Z", "+00:00") if iso_str.endswith("Z") else iso_str
                     return datetime.fromisoformat(normalized)
                 started = parse_iso(s.started_at)
-                if started:
+                if not started:
+                    secs = 0
+                else:
+                    # Ensure started is aware (UTC if naive)
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    # Determine end timestamp
                     if s.ended_at:
                         ended = parse_iso(s.ended_at)
+                        if ended and ended.tzinfo is None:
+                            ended = ended.replace(tzinfo=timezone.utc)
                     elif s.last_active:
                         ended = parse_iso(s.last_active)
+                        if ended and ended.tzinfo is None:
+                            ended = ended.replace(tzinfo=timezone.utc)
                     else:
-                        ended = datetime.now(timezone.utc)
-                    secs = (ended - started).total_seconds() if ended else 0
-                else:
-                    secs = 0
+                        ended = None
+                    end = ended if ended else datetime.now(timezone.utc)
+                    secs = (end - started).total_seconds()
             except Exception:
                 secs = 0
 
