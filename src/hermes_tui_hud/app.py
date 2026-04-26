@@ -202,7 +202,7 @@ class HomePane(Static):
         self.query_one("#home-ascii", Static).update(art)
 
         info = (
-            "\n[bold]GitHub:[/]   [link=https://github.com/GumbyEnder/hermes-tui-hud]github.com/GumbyEnder/hermes-tui-hud[/link]\n"
+            "\n[bold]GitHub:[/]   https://github.com/GumbyEnder/hermes-tui-hud\n"
             "[bold]Profile:[/]  Frodo — Hermes Project Manager\n"
             "[bold]Palette:[/]  CodeBurn-inspired cyberpunk\n"
             "[bold]Keys:[/]     q=Quit  r=Refresh  /=Search  1-9/0=Tabs\n"
