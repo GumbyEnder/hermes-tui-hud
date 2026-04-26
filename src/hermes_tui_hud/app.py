@@ -6,6 +6,7 @@ Keybindings:  q=Quit  r=Refresh  /=Search  1-9/0=Tabs  t=ToggleSkill  e=EditConf
 
 from __future__ import annotations
 
+import errno
 from datetime import datetime, timezone
 
 from textual.reactive import reactive
@@ -31,6 +32,8 @@ from .client.models import (
     CronJob, EnvVar, HermesSession, ModelInfo, SessionSearchResult,
     Skill, Status, Toolset, UsageAnalytics,
 )
+
+from .widgets import Panel
 
 def _short_rel_time(iso: str | None) -> str:
     """Return compact relative time: 30s / 5m / 2h / 3D / 1W."""
@@ -86,6 +89,65 @@ CYAN, MAGENTA, GREEN, RED, BG, PANEL = (
     "#00fff0", "#ff00ff", "#00ff41", "#ff0040", "#0a0a0f", "#12121a"
 )
 
+# ─── CodeBurn-inspired palette ─────────────────────────────────────────────
+# Accent/secondary colors borrowed from CodeBurn TUI dashboard
+# (redefines DIM from CodeBurn's '#555555')
+DIM = "#666666"
+
+# CodeBurn overview/panel highlight colors
+CB_ORANGE = "#FF8C42"   #  primary accent
+CB_GOLD   = "#FFD700"   #  totals / key numbers
+CB_GREEN  = "#5BF58C"   #  healthy / success
+CB_BLUE   = "#5B9EF5"   #  info / sessions
+CB_RED    = "#F55B5B"   #  errors / over-limit
+CB_MAGENTA= "#E05BF5"   #  models / special
+CB_CYAN2  = "#5BF5E0"   #  tools / MCP secondary
+CB_PURPLE = "#F55BE0"   #  mcp / distinct category
+CB_AMBER  = "#F5A05B"   #  bash / system
+
+# Per-pane / per-category color mapping (panel headers, table accents)
+PANE_COLORS = {
+    "status":   CB_ORANGE,
+    "sessions": CB_BLUE,
+    "model":    CB_MAGENTA,
+    "config":   CB_GREEN,
+    "skills":   CB_GREEN,
+    "tools":    CB_CYAN2,
+    "cron":     CB_AMBER,
+    "logs":     DIM,
+    "analytics": CB_PURPLE,
+    "env":      CYAN,
+    "commands": MAGENTA,
+}
+
+# Task / activity category colors (from CodeBurn CATEGORY_COLORS)
+CATEGORY_COLORS = {
+    "coding":           "#5B9EF5",   # blue
+    "debugging":        "#F55B5B",   # red
+    "feature":          "#5BF58C",   # green
+    "refactoring":      "#F5E05B",   # yellow
+    "testing":          "#E05BF5",   # magenta
+    "exploration":      "#5BF5E0",   # cyan
+    "planning":         "#7B9EF5",   # light blue
+    "delegation":       "#F5C85B",   # gold
+    "git":              "#CCCCCC",   # gray
+    "build/deploy":     "#5BF5A0",   # light green
+    "conversation":     "#888888",   # dim gray
+    "brainstorming":    "#F55BE0",   # purple-pink
+    "general":          "#666666",   # neutral
+}
+
+# Provider / model family colors (matches CodeBurn PROVIDER_COLORS)
+PROVIDER_COLORS = {
+    "claude":  "#FF8C42",   # orange
+    "codex":   "#5BF5A0",   # green
+    "cursor":  "#00B4D8",   # blue
+    "opencode": "#A78BFA",  # purple
+    "pi":      "#F472B6",  # pink
+    "openai":  "#10a37f",  # official OpenAI green
+    "anthropic": CB_ORANGE,
+}
+
 
 class CyberHeader(Static):
     version = reactive("")
@@ -122,9 +184,10 @@ class CyberHeader(Static):
 
 class StatusPane(Static):
     def compose(self) -> ComposeResult:
-        with Vertical():
-            for n in ("ver", "gw", "plat", "cfg", "env"):
-                yield Label("", id=f"st-{n}")
+        with Panel("Status", color=PANE_COLORS["status"]):
+            with Vertical():
+                for n in ("ver", "gw", "plat", "cfg", "env"):
+                    yield Label("", id=f"st-{n}")
 
     def update_status(self, s: Status) -> None:
         self._upd("ver", f"Version       : {s.version}  ({s.release_date})")
@@ -145,12 +208,13 @@ class StatusPane(Static):
 
 class SessionsPane(Static):
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Label("", id="sm")
-            t = DataTable(id="st", zebra_stripes=True)
-            t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Last Act", "Title")
-            yield t
-            yield Label("", id="sn")
+        with Panel("Sessions", color=PANE_COLORS["sessions"]):
+            with Vertical():
+                yield Label("", id="sm")
+                t = DataTable(id="st", zebra_stripes=True)
+                t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Last Act", "Title")
+                yield t
+                yield Label("", id="sn")
 
     def update_sessions(self, sessions, total):
         t = self.query_one("#st", DataTable)
@@ -186,9 +250,10 @@ class SessionsPane(Static):
 
 class ModelPane(Static):
     def compose(self) -> ComposeResult:
-        with ScrollableContainer():
-            for n in ("name", "prov", "ctx", "maxo", "tools", "vision", "reason", "fam"):
-                yield Label("", id=f"md-{n}")
+        with Panel("Model", color=PANE_COLORS["model"]):
+            with ScrollableContainer():
+                for n in ("name", "prov", "ctx", "maxo", "tools", "vision", "reason", "fam"):
+                    yield Label("", id=f"md-{n}")
 
     def update_model(self, m: ModelInfo) -> None:
         self._upd("name", f"◉ Model   : {m.model}")
@@ -213,11 +278,12 @@ class ConfigPane(Static):
     edit_mode = reactive(False)
     def compose(self) -> ComposeResult:
         # Display mode container
-        with Vertical(id="cfg-display"):
-            yield RichLog(id="cl", wrap=True, markup=True, highlight=True)
-        # Edit mode container (hidden by default)
-        with Vertical(id="cfg-edit", classes="hidden"):
-            yield TextArea(id="cfg-editor", language="yaml", show_line_numbers=True)
+        with Panel("Config", color=PANE_COLORS["config"]):
+            with Vertical(id="cfg-display"):
+                yield RichLog(id="cl", wrap=True, markup=True, highlight=True)
+            # Edit mode container (hidden by default)
+            with Vertical(id="cfg-edit", classes="hidden"):
+                yield TextArea(id="cfg-editor", language="yaml", show_line_numbers=True)
 
     def update_config(self, text: str) -> None:
         # If we're in edit mode, force back to display
@@ -258,11 +324,13 @@ class ConfigPane(Static):
             editor.blur()
 
 class SkillsPane(Static):
+    BINDINGS = [Binding("t", "toggle_skill", "Toggle Skill")]
     def compose(self) -> ComposeResult:
-        with Vertical():
-            t = DataTable(zebra_stripes=True, cursor_type="row")
-            t.add_columns("Status", "Name", "Description")
-            yield t
+        with Panel("Skills", color=PANE_COLORS["skills"]):
+            with Vertical():
+                t = DataTable(zebra_stripes=True, cursor_type="row")
+                t.add_columns("Status", "Name", "Description")
+                yield t
 
     def update_skills(self, skills: list[Skill]) -> None:
         t = self.query_one(DataTable)
@@ -271,17 +339,45 @@ class SkillsPane(Static):
             st = "[green]ON[/]" if s.enabled else "[red]OFF[/]"
             t.add_row(st, s.name, (s.description or "-")[:60], key=s.name)
 
+    def action_toggle_skill(self) -> None:
+        """Toggle the currently selected skill in the skills tab."""
+        table = self.query_one(DataTable)
+        row_idx = table.cursor_row
+        if row_idx is None or row_idx < 0:
+            self.notify("No skill selected (use ↑↓ to pick)", severity="warning")
+            return
+        skill_name = table.get_row_at(row_idx)[1]
+        status_cell = table.get_row_at(row_idx)[0]
+        currently_on = status_cell.startswith("[green]")
+        desired_state = not currently_on
+        try:
+            result = self.app.client.toggle_skill(skill_name, enabled=desired_state)
+            new_state = result.get("enabled", desired_state)
+            self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=3)
+            try:
+                new_label = "[green]ON[/]" if new_state else "[red]OFF[/]"
+                table.update_cell(row_idx, 0, new_label)
+            except Exception:
+                pass
+            self.app._do_refresh_skills()
+        except Exception as exc:
+            msg = str(exc)
+            hint = f" ({exc.args[0][:60]})" if hasattr(exc, 'args') and exc.args else ""
+            self.notify(f"Toggle failed: {msg}{hint}", severity="error", timeout=5)
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Row selected — cursor_row already updates, no extra state needed."""
         pass
 
 
 class ToolsPane(Static):
+    BINDINGS = [Binding("t", "toggle_tool", "Toggle Tool")]
     def compose(self) -> ComposeResult:
-        with Vertical():
-            t = DataTable(zebra_stripes=True)
-            t.add_columns("Status", "Toolset", "Enabled", "Configured", "Tools")
-            yield t
+        with Panel("Tools", color=PANE_COLORS["tools"]):
+            with Vertical():
+                t = DataTable(zebra_stripes=True)
+                t.add_columns("Status", "Toolset", "Enabled", "Configured", "Tools")
+                yield t
 
     def update_tools(self, toolsets: list[Toolset]) -> None:
         t = self.query_one(DataTable)
@@ -299,16 +395,29 @@ class ToolsPane(Static):
             t.add_row(st, ts.name[:20], en, cfg, tools_preview)
 
 
+    def action_toggle_tool(self) -> None:
+        """Toggle tool enabled state (not yet supported via API)."""
+        table = self.query_one(DataTable)
+        row_idx = table.cursor_row
+        if row_idx is None or row_idx < 0:
+            self.notify("No tool selected", severity="warning")
+            return
+        tool_name = table.get_row_at(row_idx)[1]
+        self.notify(f"Tool '{tool_name}' toggle not supported yet (API endpoint missing)", severity="warning", timeout=5)
+
 class CronPane(Static):
+    BINDINGS = [Binding("t", "toggle_cron", "Toggle Cron Job")]
     def compose(self) -> ComposeResult:
-        with Vertical():
-            t = DataTable(zebra_stripes=True)
-            t.add_columns("Status", "JobID", "Name", "Schedule", "Last Run", "Status")
-            yield t
+        with Panel("Cron Jobs", color=PANE_COLORS["cron"]):
+            with Vertical():
+                t = DataTable(zebra_stripes=True)
+                t.add_columns("Status", "JobID", "Name", "Schedule", "Last Run", "Status")
+                yield t
 
     def update_cron(self, jobs: list[CronJob]) -> None:
         t = self.query_one(DataTable)
         t.clear()
+        self.jobs = jobs
         for j in jobs:
             st = "[green]ON[/]" if j.enabled else "[red]OFF[/]"
             lr = (j.last_run or "-")[:19]
@@ -316,14 +425,43 @@ class CronPane(Static):
             col = GREEN if (j.last_status or "").lower() == "success" else RED if j.last_status else ""
             # Use schedule_display (human-friendly) if present, else fallback to raw schedule
             sched = j.schedule_display[:12] if j.schedule_display else (str(j.schedule)[:12] if j.schedule else "-")
-            t.add_row(st, j.job_id[:12], j.name[:22], sched, lr, f"[{col}]{ls}[/]" if col else ls)
+            t.add_row(st, j.job_id[:12], j.name[:22], sched, lr, f"[{col}]{ls}[/]" if col else ls, key=j.job_id)
 
+
+    def action_toggle_cron(self) -> None:
+        """Toggle the enabled state of the selected cron job."""
+        table = self.query_one(DataTable)
+        row_idx = table.cursor_row
+        if row_idx is None or row_idx < 0:
+            self.notify("No cron job selected", severity="warning")
+            return
+        if not hasattr(self, 'jobs') or row_idx >= len(self.jobs):
+            self.notify("Cron job data out of sync", severity="error")
+            return
+        job = self.jobs[row_idx]
+        job_id = job.job_id
+        desired_state = not job.enabled
+        try:
+            result = self.app.client.update_cron_job(job_id, enabled=desired_state)
+            new_state = getattr(result, 'enabled', desired_state)
+            self.notify(f"Cron job '{job.name[:30]}' → {'ON' if new_state else 'OFF'}", timeout=3)
+            try:
+                new_label = "[green]ON[/]" if new_state else "[red]OFF[/]"
+                table.update_cell(row_idx, 0, new_label)
+            except Exception:
+                pass
+            self.app._do_refresh_cron()
+        except Exception as exc:
+            msg = str(exc)
+            hint = f" ({exc.args[0][:60]})" if hasattr(exc, 'args') and exc.args else ""
+            self.notify(f"Cron toggle failed: {msg}{hint}", severity="error", timeout=5)
 
 class LogsPane(Static):
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
-            yield RichLog(id="lv", wrap=True, markup=True, highlight=True)
+        with Panel("Logs", color=PANE_COLORS["logs"]):
+            with Vertical():
+                yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
+                yield RichLog(id="lv", wrap=True, markup=True, highlight=True)
 
     def append_log_line(self, line: str) -> None:
         log = self.query_one("#lv", RichLog)
@@ -345,11 +483,19 @@ class LogsPane(Static):
 class AnalyticsPane(Static):
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("", id="totals")
-            yield Label("─ By model ─" * 4)
-            tm = DataTable(id="atm"); tm.add_columns("Model", "In", "Out", "Cost"); yield tm
-            yield Label("─ Daily ─" * 4)
-            td = DataTable(id="atd"); td.add_columns("Date", "In", "Out", "Sess", "Cost"); yield td
+            # Totals panel
+            with Panel("📊 Totals (7d)", color=CB_BLUE):
+                yield Label("", id="totals")
+            # Model breakdown panel
+            with Panel("By Model", color=CB_MAGENTA):
+                tm = DataTable(id="atm")
+                tm.add_columns("Model", "In", "Out", "Cost")
+                yield tm
+            # Daily activity panel
+            with Panel("Daily", color=CB_ORANGE):
+                td = DataTable(id="atd")
+                td.add_columns("Date", "In", "Out", "Sess", "Cost")
+                yield td
 
     def update_analytics(self, a: UsageAnalytics) -> None:
         t = a.totals
@@ -374,10 +520,11 @@ class AnalyticsPane(Static):
 
 class EnvPane(Static):
     def compose(self) -> ComposeResult:
-        with Vertical():
-            t = DataTable(zebra_stripes=True)
-            t.add_columns("Status", "Name", "Value", "Description")
-            yield t
+        with Panel("Environment", color=PANE_COLORS["env"]):
+            with Vertical():
+                t = DataTable(zebra_stripes=True)
+                t.add_columns("Status", "Name", "Value", "Description")
+                yield t
 
     def update_env(self, envs: list[EnvVar]) -> None:
         t = self.query_one(DataTable)
@@ -392,11 +539,12 @@ class EnvPane(Static):
 class CommandsPane(Static):
     """Display all keybindings in a sortable table."""
     def compose(self) -> ComposeResult:
-        with Vertical(id="cmd-container"):
-            yield Label("⌨⟨ KEYBINDINGS ⟩", id="cmd-title")
-            t = DataTable(zebra_stripes=True, id="cmd-table")
-            t.add_columns("Key", "Action", "Description")
-            yield t
+        with Panel("Commands", color=PANE_COLORS["commands"]):
+            with Vertical(id="cmd-container"):
+                yield Label("⌨⟨ KEYBINDINGS ⟩", id="cmd-title")
+                t = DataTable(zebra_stripes=True, id="cmd-table")
+                t.add_columns("Key", "Action", "Description")
+                yield t
 
     def on_mount(self) -> None:
         table = self.query_one("#cmd-table", DataTable)
@@ -528,7 +676,6 @@ class HermesHUDApp(App):
         *[Binding(str(i), f"tab_{i}", f"Tab {i}") for i in range(1, 10)],
         Binding("0", "tab_0", "Tab 0"),
         # Skills & Config
-        Binding("t", "toggle_skill", "Toggle Skill"),
         Binding("e", "edit_config", "Edit Config"),
         Binding("ctrl+s", "save_config", "Save Config", priority=True),
         Binding("escape", "cancel_edit", "Cancel Edit"),
@@ -736,35 +883,6 @@ class HermesHUDApp(App):
 
     # Skills & Config actions ────────────────────────────────────────────────
 
-    def action_toggle_skill(self) -> None:
-        """Toggle the currently selected skill in the skills tab."""
-        pane = self.query_one("#skills-pane", SkillsPane)
-        table = pane.query_one(DataTable)
-        row_idx = table.cursor_row
-        if row_idx is None or row_idx < 0:
-            self.notify("No skill selected (use ↑↓ to pick)", severity="warning")
-            return
-        skill_name = table.get_row_at(row_idx)[1]
-        status_cell = table.get_row_at(row_idx)[0]
-        # Determine current state from cell: "[green]ON[/]" or "[red]OFF[/]" or unknown
-        currently_on = status_cell.startswith("[green]")
-        desired_state = not currently_on
-        try:
-            result = self.client.toggle_skill(skill_name, enabled=desired_state)
-            # Server echoes back the new state
-            new_state = result.get("enabled", desired_state)
-            self.notify(f"Skill '{skill_name}' → {'ON' if new_state else 'OFF'}", timeout=3)
-            # Update cell directly for immediate feedback
-            try:
-                new_label = "[green]ON[/]" if new_state else "[red]OFF[/]"
-                table.update_cell(row_idx, 0, new_label)
-            except Exception:
-                pass  # ignore UI update errors; background refresh will recover
-            self._do_refresh_skills()
-        except Exception as exc:
-            msg = str(exc)
-            hint = f" ({exc.args[0][:60]})" if hasattr(exc, 'args') and exc.args else ""
-            self.notify(f"Toggle failed: {msg}{hint}", severity="error", timeout=5)
 
     def action_edit_config(self) -> None:
         """Enter config edit mode."""
@@ -872,4 +990,11 @@ def run_app(args) -> None:
     print(f"Connected to Hermes {status.version} (gateway {'running' if status.gateway_running else 'stopped'})")
     print("Launching TUI HUD…")
     app = HermesHUDApp(client)
-    app.run()
+    try:
+        app.run()
+    except OSError as e:
+        # Suppress EIO crashes when terminal PTY is closed during shutdown
+        # (ConPTY mouse-tracking flush issue on Windows / WSL; also seen on Linux when
+        # the terminal emulator exits before the TUI restores terminal state)
+        if e.errno != errno.EIO:
+            raise
