@@ -606,29 +606,39 @@ class CyberFooter(Footer):
 
 
 class HermesHUDApp(App):
+    enable_mouse = False  # Disable mouse tracking to avoid ConPTY EIO crash on exit
+
     CSS = """
-Screen { background: var(--bg); overflow: hidden; }
+/* Palette variables — overridden via get_css_variables() */
+$cyan: #00ffff;
+$magenta: #ff00ff;
+$green: #00ff00;
+$red: #ff0000;
+$bg: #000000;
+$panel: #111111;
+
+
+Screen { background: $bg; overflow: hidden; }
 
 #cyber-header {
     dock: top;
     height: 3;
-    background: var(--panel);
-    border: solid var(--cyan);
+    background: $panel;
+    border: solid $cyan;
     padding: 0 1; content-align: left middle;
-    z-index: 1;
 }
-#cyber-header Label { color: var(--cyan); text-style: bold; margin-right: 2; }
+#cyber-header Label { color: $cyan; text-style: bold; margin-right: 2; }
 
 #tabs {
     height: 1fr;
     margin-top: 3;
     margin-bottom: 3;
-    background: var(--bg);
+    background: $bg;
 }
 
 TabPane {
     height: 1fr;
-    background: var(--panel);
+    background: $panel;
     padding: 1;
 }
 TabPane > * { height: 1fr; }
@@ -639,22 +649,21 @@ TabPane > Vertical > Label,
 TabPane > Label { height: auto; }
 
 DataTable {
-    background: var(--panel);
+    background: $panel;
     color: #e0e0e0;
 }
-DataTable > .datatable--cursor { background: var(--cyan); color: black; }
-DataTable > .datatable--fixed { background: var(--panel); }
-DataTable > .datatable--fixed-cursor { background: var(--cyan); color: black; }
+DataTable > .datatable--cursor { background: $cyan; color: black; }
+DataTable > .datatable--fixed { background: $panel; }
+DataTable > .datatable--fixed-cursor { background: $cyan; color: black; }
 
 Footer {
     dock: bottom;
     height: 3;
-    background: var(--panel);
-    color: var(--cyan);
-    z-index: 1;
+    background: $panel;
+    color: $cyan;
 }
 #palette-label {
-    color: var(--cyan);
+    color: $cyan;
     text-style: bold;
     dock: left;
     padding: 0 1;
@@ -662,9 +671,9 @@ Footer {
 
 #sm, #sn { color: #888; }
 #lh { margin-bottom: 1; color: #666; }
-#lv { height: 1fr; background: var(--panel); color: #e0e0e0; }
-#cl { height: 1fr; background: var(--panel); color: #d0d0d0; }
-#totals { color: var(--green); text-style: bold; margin-bottom: 1; }
+#lv { height: 1fr; background: $panel; color: #e0e0e0; }
+#cl { height: 1fr; background: $panel; color: #d0d0d0; }
+#totals { color: $green; text-style: bold; margin-bottom: 1; }
 #cfg-editor { height: 1fr; }
 #cfg-display, #cfg-edit { height: 1fr; }
 .hidden { display: none; }
@@ -689,8 +698,7 @@ Footer {
         background: {PANEL};
         border: solid {CYAN};
         padding: 0 1; content-align: left middle;
-        z-index: 1;
-    }}
+        }}
     #cyber-header Label {{ color: {CYAN}; text-style: bold; margin-right: 2; }}
 
     /* Main content area */
@@ -736,8 +744,7 @@ Footer {
         height: 3;
         background: {PANEL};
         color: {CYAN};
-        z-index: 1;
-    }}
+        }}
     #palette-label {{
         color: {CYAN};
         text-style: bold;
@@ -799,12 +806,12 @@ Footer {
         """Return CSS custom property values for current palette."""
         variables = super().get_css_variables()
         variables.update({
-            "--cyan": CYAN,
-            "--magenta": MAGENTA,
-            "--green": GREEN,
-            "--red": RED,
-            "--bg": BG,
-            "--panel": PANEL,
+            "$cyan": CYAN,
+            "$magenta": MAGENTA,
+            "$green": GREEN,
+            "$red": RED,
+            "$bg": BG,
+            "$panel": PANEL,
         })
         return variables
 
