@@ -236,12 +236,13 @@ class StatusPane(Static):
 
 
 class SessionsPane(Static):
+    BINDINGS = [Binding("r", "refresh_sessions", "Refresh Sessions")]
     def compose(self) -> ComposeResult:
         with Panel("Sessions", color=PANE_COLORS["sessions"]):
             with Vertical():
                 yield Label("", id="sm")
                 t = DataTable(id="st", zebra_stripes=True)
-                t.add_columns("ID", "Model", "Plat", "In", "Out", "Cost", "Status", "Last Act", "Title")
+                t.add_columns("ID", "Model", "Plat", "In", "Out", "In/s", "Out/s", "Cost", "Status", "Last Act", "Title")
                 yield t
                 yield Label("", id="sn")
 
@@ -253,9 +254,48 @@ class SessionsPane(Static):
             st = "ACTIVE" if s.is_active else "IDLE"
             col = GREEN if s.is_active else CYAN
             last = _short_rel_time(s.last_active) if s.last_active else "-"
+
+            # Compute token velocity (tokens/second)
+            def _vel(tokens: int, secs: float) -> str:
+                if secs <= 0 or tokens == 0:
+                    return "-"
+                tps = tokens / secs
+                if tps >= 1000:
+                    return f"{tps/1000:.1f}k"
+                elif tps >= 10:
+                    return f"{tps:>4.0f}"
+                else:
+                    return f"{tps:.1f}"
+
+            # Determine session duration in seconds
+            try:
+                def parse_iso(iso_str: str | None) -> datetime | None:
+                    if not iso_str:
+                        return None
+                    normalized = iso_str.replace("Z", "+00:00") if iso_str.endswith("Z") else iso_str
+                    return datetime.fromisoformat(normalized)
+                started = parse_iso(s.started_at)
+                if started:
+                    if s.ended_at:
+                        ended = parse_iso(s.ended_at)
+                    elif s.last_active:
+                        ended = parse_iso(s.last_active)
+                    else:
+                        ended = datetime.now(timezone.utc)
+                    secs = (ended - started).total_seconds() if ended else 0
+                else:
+                    secs = 0
+            except Exception:
+                secs = 0
+
+            in_vel = _vel(s.input_tokens, secs)
+            out_vel = _vel(s.output_tokens, secs)
+
             t.add_row(
                 s.session_id[:12], s.model[:22], s.platform[:8],
-                f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}", f"{cost:>9}",
+                f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}",
+                in_vel, out_vel,
+                f"{cost:>9}",
                 f"[{col}]{st}[/]", last, (s.title or "-")[:40],
             )
         self._upd("sm", f"Total: {total}  ·  showing {len(sessions)}")
@@ -397,6 +437,10 @@ class SkillsPane(Static):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Row selected — cursor_row already updates, no extra state needed."""
         pass
+
+    def action_refresh_sessions(self) -> None:
+        """Refresh sessions data for this pane."""
+        self.app._do_refresh_sessions()
 
 
 class ToolsPane(Static):
