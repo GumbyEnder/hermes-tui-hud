@@ -242,7 +242,7 @@ class SessionsPane(Static):
             with Vertical():
                 yield Label("", id="sm")
                 t = DataTable(id="st", zebra_stripes=True)
-                t.add_columns("ID", "Model", "Plat", "In", "Out", "In/s", "Out/s", "Cost", "Status", "Last Act", "Title")
+                t.add_columns("ID", "Model", "Plat", "In", "Out", "In/s", "Out/s", "Cost", "Status", "Last Act")
                 yield t
                 yield Label("", id="sn")
 
@@ -305,7 +305,7 @@ class SessionsPane(Static):
                 f"{s.input_tokens:>7,}", f"{s.output_tokens:>7,}",
                 in_vel, out_vel,
                 f"{cost:>9}",
-                f"[{col}]{st}[/]", last, (s.title or "-")[:40],
+                f"[{col}]{st}[/]", last,
             )
         self._upd("sm", f"Total: {total}  ·  showing {len(sessions)}")
 
