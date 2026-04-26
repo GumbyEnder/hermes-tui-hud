@@ -547,7 +547,7 @@ class LogsPane(Static):
 
     def compose(self) -> ComposeResult:
         with Panel("Logs", color=PANE_COLORS["logs"]):
-            with ScrollView(id="logs-scroll"):
+            with ScrollableContainer(id="logs-scroll"):
                 yield Static("", id="lv", markup=True)
 
     def append_log_line(self, line: str) -> None:
