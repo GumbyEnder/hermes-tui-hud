@@ -332,3 +332,17 @@ class HermesDashboardClient:
     def list_plugins(self) -> list[dict[str, Any]]:
         data = self.get("/api/dashboard/plugins", require_auth=False)
         return data if isinstance(data, list) else []
+    # ── Analytics+ Plugin ─────────────────────────────────────────────────
+
+    def get_plugin_analytics_totals(self, days: int = 7) -> dict[str, Any]:
+        data = self.get(f"/api/plugins/analytics/totals?days={int(days)}")
+        return data if isinstance(data, dict) else {}
+
+    def get_plugin_analytics_timeseries(self, days: int = 7) -> list[dict[str, Any]]:
+        data = self.get(f"/api/plugins/analytics/timeseries?days={int(days)}")
+        return data if isinstance(data, list) else []
+
+    def get_plugin_analytics_model_efficiency(self, days: int = 7) -> list[dict[str, Any]]:
+        data = self.get(f"/api/plugins/analytics/model-efficiency?days={int(days)}")
+        return data if isinstance(data, list) else []
+

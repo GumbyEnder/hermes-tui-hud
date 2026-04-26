@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import errno
 from datetime import datetime, timezone
+from typing import Any
 import subprocess
 import urllib.parse
+import webbrowser
 
 from textual.reactive import reactive
 from textual import on, work
@@ -605,6 +607,47 @@ class AnalyticsPane(Static):
         for d in a.daily[-14:]:
             dt.add_row(d.day, f"{d.input_tokens:,d}", f"{d.output_tokens:,d}", str(d.sessions), f"${d.estimated_cost:.4f}")
 
+    def update_analytics_from_plugin(
+        self,
+        totals: dict[str, Any],
+        timeseries: list[dict[str, Any]],
+        efficiency: list[dict[str, Any]],
+    ) -> None:
+        """Render Analytics+ plugin data (plugin-first mode)."""
+        # Totals card
+        tot_sessions = totals.get('total_sessions', 0)
+        tot_in = totals.get('total_input', 0)
+        tot_out = totals.get('total_output', 0)
+        tot_cost = totals.get('total_cost', 0.0)
+        model_count = totals.get('model_count', 0)
+        self._upd(
+            'totals',
+            f'Totals (7d) – In: {tot_in:,d}  Out: {tot_out:,d}  '
+            f'Cost: ${tot_cost:.2f}  Sessions: {tot_sessions}  Models: {model_count}',
+        )
+
+        # Model efficiency DataTable
+        mt = self.query_one('#atm', DataTable)
+        mt.clear()
+        for entry in efficiency:
+            model = entry.get('model', '')[:28]
+            inp = entry.get('input_tokens', 0)
+            out = entry.get('output_tokens', 0)
+            cost = entry.get('estimated_cost', 0.0)
+            tokens = inp + out
+            tp_dollar = f'{tokens / cost:.2f}' if cost > 0 else '∞'
+            mt.add_row(model, f'{inp:,d}', f'{out:,d}', f'${cost:.4f}  Tokens/$: {tp_dollar}')
+
+        # Daily activity from timeseries
+        dt = self.query_one('#atd', DataTable)
+        dt.clear()
+        for day in timeseries[-14:]:
+            d = day.get('day', '')
+            din = day.get('input_tokens', 0)
+            dout = day.get('output_tokens', 0)
+            dsess = day.get('sessions', 0)
+            dcost = day.get('estimated_cost', 0.0)
+            dt.add_row(d, f'{din:,d}', f'{dout:,d}', str(dsess), f'${dcost:.4f}')
     def _upd(self, n, txt):
         try:
             self.query_one(f"#{n}", Label).update(txt)
@@ -847,6 +890,7 @@ Footer {
         Binding("ctrl+s", "save_config", "Save Config", priority=True),
         Binding("escape", "cancel_edit", "Cancel Edit"),
         Binding("ctrl+p", "cycle_palette", "Cycle Palette", priority=True),
+        Binding("ctrl+d", "open_dashboard", "Open Dashboard", priority=True),
     ]
 
     TITLE = "Hermes Agent HUD"
@@ -1052,13 +1096,34 @@ Footer {
 
     def _do_refresh_analytics(self) -> None:
         try:
-            a = self.client.get_usage_analytics(30)
-            self.call_from_thread(self._update_analytics, a)
+            # Prefer Analytics+ plugin if available
+            plugins = self.client.list_plugins()
+            if any(p.get("name") == "analytics" for p in plugins):
+                totals = self.client.get_plugin_analytics_totals(7)
+                timeseries = self.client.get_plugin_analytics_timeseries(7)
+                efficiency = self.client.get_plugin_analytics_model_efficiency(7)
+                self.call_from_thread(
+                    self._update_analytics_from_plugin, totals, timeseries, efficiency
+                )
+            else:
+                # Fallback to built-in analytics
+                a = self.client.get_usage_analytics(30)
+                self.call_from_thread(self._update_analytics, a)
         except Exception:
             pass
 
     def _update_analytics(self, a: UsageAnalytics) -> None:
         self.query_one("#analytics-pane", AnalyticsPane).update_analytics(a)
+
+    def _update_analytics_from_plugin(
+        self,
+        totals: dict[str, Any],
+        timeseries: list[dict[str, Any]],
+        efficiency: list[dict[str, Any]],
+    ) -> None:
+        self.query_one("#analytics-pane", AnalyticsPane).update_analytics_from_plugin(
+            totals, timeseries, efficiency
+        )
 
     def _do_refresh_env(self) -> None:
         try:
@@ -1074,6 +1139,13 @@ Footer {
 
     def action_quit(self) -> None:
         self.exit()
+
+    def action_open_dashboard(self) -> None:
+        """Open the Hermes web dashboard in the system browser."""
+        base = getattr(self, "client", None)
+        base_url = base.base_url if base else os.getenv("HERMES_HUD_BASE_URL", "http://127.0.0.1:9119")
+        webbrowser.open(f"{base_url.rstrip('/')}/dashboard")
+        self.notify("Opening dashboard…", timeout=2)
 
     def action_search(self) -> None:
         if self.query_one(TabbedContent).active in ("tab_2", "tab_8"):
