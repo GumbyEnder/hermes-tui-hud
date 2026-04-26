@@ -817,7 +817,7 @@ Footer {
 
     def compose(self) -> ComposeResult:
         yield CyberHeader(id="cyber-header")
-        with TabbedContent(id="tabs", initial="Home"):
+        with TabbedContent(id="tabs"):
             names = ["Home","Status","Sessions","Model","Config","Skills","Tools","Cron","Logs","Analytics","Env","Commands"]
             for i, name in enumerate(names):
                 # Commands sits beyond the 10-numeric-slot limit; give it a unique non-numeric ID
