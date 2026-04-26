@@ -824,7 +824,12 @@ Footer {
                 if name == "Commands":
                     tid = "commands-tab"
                 else:
-                    tid = f"tab_{i+1}" if i < 9 else "tab_0"
+                    if i == 9:
+                        tid = "tab_0"      # Analytics (10th tab) → numeric '0' slot
+                    elif i < 9:
+                        tid = f"tab_{i+1}" # Home..Tools → tab_1..tab_9
+                    else:
+                        tid = f"tab_{i}"   # Env (i=10) → tab_10 (no numeric binding, unique)
                 pid = f"{name.lower()}-pane"
                 with TabPane(name, id=tid):
                     match name:
