@@ -549,7 +549,7 @@ class LogsPane(Static):
         with Panel("Logs", color=PANE_COLORS["logs"]):
             with Vertical():
                 yield Label("Level: [cyan]INFO[/] [green]DEBUG[/] [yellow]WARN[/] [red]ERROR[/]", id="lh")
-                yield Markdown(id="lv", code=False)
+                yield Markdown(id="lv")
 
     def append_log_line(self, line: str) -> None:
         # Apply log level coloring
